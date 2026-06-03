@@ -13,7 +13,7 @@ class PoolGame extends Forge2DGame {
   final void Function(int score, String label) onShotEvaluated;
 
   PoolGame({required this.onShotEvaluated})
-      : super(gravity: Vector2.zero(), zoom: 10);
+      : super(gravity: Vector2.zero());
 
   final stateNotifier = ValueNotifier<GameState>(GameState.aiming);
 
@@ -33,14 +33,19 @@ class PoolGame extends Forge2DGame {
 
   final List<Vector2> _pocketPositions = <Vector2>[];
 
+  // Called every time the screen resizes — the right place to set camera so it
+  // always fills the available area regardless of window/device size.
+  @override
+  void onGameResize(Vector2 size) {
+    super.onGameResize(size);
+    // visibleGameSize auto-calculates zoom so the table fits with 6% padding
+    camera.viewfinder.visibleGameSize = Vector2(tableW * 1.06, tableH * 1.06);
+    camera.viewfinder.position = Vector2(tableW / 2, tableH / 2);
+  }
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-
-    // Fix camera position: use setter (not setValues which modifies a copy)
-    // forge2d 0.14 and flame both use vector_math 32-bit Vector2 — no type conflict
-    camera.viewfinder.position = Vector2(tableW / 2, tableH / 2);
-    camera.viewfinder.zoom = 10;
 
     // Pocket positions
     final hw = tableW / 2;

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/leomok/workspace/**)",
+      "Bash(flutter create *)",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/leomok/development/flutter/bin/**)",
+      "Read(//Users/leomok/**)",
+      "Bash(flutter pub *)",
+      "Bash(flutter build *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter run *)",
+      "Bash(git init *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(open /Users/leomok/workspace/pool-tutorial/build/macos/Build/Products/Debug/pool_tutorial.app)"
+    ]
+  }
+}
