@@ -1,16 +1,23 @@
 import 'dart:ui';
 import 'package:flame_forge2d/flame_forge2d.dart';
-import 'package:flutter/material.dart' show Color, Alignment, LinearGradient;
+import 'package:flutter/material.dart' show Alignment, Color, LinearGradient, RRect, Radius;
 
-/// Renders the pool table in physics world coordinates (BodyComponent).
-/// Uses a static body at origin; canvas is already in world space.
+/// Renders a minimalist portrait pool table:
+///   - light-gray felt, rounded corners, NO wooden frame
+///   - white circles at pocket positions (showing background through)
 class TableComponent extends BodyComponent {
   final double tableWidth;
   final double tableHeight;
   final List<Vector2> pocketPositions;
 
-  static const double pocketRadius = 0.55;
-  static const double railThickness = 0.5;
+  /// Physics offset for walls (kept small so pockets sit at edges).
+  static const double railThickness = 0.25;
+  static const double pocketRadius  = 0.50;
+
+  static const _felt    = Color(0xFFCFD8DC); // blue-gray felt
+  static const _feltDk  = Color(0xFFB0BEC5); // slightly darker for subtle gradient
+  static const _hole    = Color(0xFFFFFFFF); // white = shows background
+  static const _holeSh  = Color(0x22000000); // pocket shadow ring
 
   TableComponent({
     required this.tableWidth,
@@ -19,105 +26,58 @@ class TableComponent extends BodyComponent {
   });
 
   @override
+  int get priority => 0; // drawn first (below balls and overlay)
+
+  @override
   Body createBody() {
-    final bodyDef = BodyDef()
+    final bd = BodyDef()
       ..type = BodyType.static
       ..position = Vector2.zero();
-    // No fixture needed — walls are created by PoolGame
-    return world.createBody(bodyDef);
+    return world.createBody(bd); // no fixtures — walls created by PoolGame
   }
 
   @override
   void render(Canvas canvas) {
-    _drawTable(canvas);
+    _drawFelt(canvas);
     _drawPockets(canvas);
-    _drawRails(canvas);
   }
 
-  void _drawTable(Canvas canvas) {
-    final feltPaint = Paint()
-      ..shader = LinearGradient(
-        colors: const [Color(0xFF1B6B3A), Color(0xFF1A5C32), Color(0xFF1B6B3A)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(Rect.fromLTWH(0, 0, tableWidth, tableHeight));
-    canvas.drawRect(Rect.fromLTWH(0, 0, tableWidth, tableHeight), feltPaint);
+  void _drawFelt(Canvas canvas) {
+    final rr = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, tableWidth, tableHeight),
+      const Radius.circular(0.6),
+    );
 
-    // Felt texture
-    final linePaint = Paint()
-      ..color = const Color(0xFF1E7A41).withOpacity(0.3)
-      ..strokeWidth = 0.015;
-    for (double y = 0; y < tableHeight; y += 0.4) {
-      canvas.drawLine(Offset(0, y), Offset(tableWidth, y), linePaint);
-    }
-
-    // Center and baulk lines
-    final markPaint = Paint()
-      ..color = const Color(0xFF2ECC71).withOpacity(0.15)
-      ..strokeWidth = 0.03;
-    canvas.drawLine(Offset(tableWidth / 2, railThickness),
-        Offset(tableWidth / 2, tableHeight - railThickness), markPaint);
-    canvas.drawLine(Offset(tableWidth * 0.25, railThickness),
-        Offset(tableWidth * 0.25, tableHeight - railThickness), markPaint);
-
-    // Baulk D arc
-    canvas.drawArc(
-      Rect.fromCircle(
-          center: Offset(tableWidth * 0.25, tableHeight / 2),
-          radius: tableHeight * 0.18),
-      -1.5708, 3.1416, false,
+    // Subtle linear gradient to give depth
+    canvas.drawRRect(
+      rr,
       Paint()
-        ..color = const Color(0xFF2ECC71).withOpacity(0.15)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.03,
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: const [_felt, _feltDk],
+        ).createShader(Rect.fromLTWH(0, 0, tableWidth, tableHeight)),
+    );
+
+    // Very light inner glow so table reads as a surface
+    canvas.drawRRect(
+      rr,
+      Paint()
+        ..color = const Color(0x0CFFFFFF)
+        ..style = PaintingStyle.fill,
     );
   }
 
   void _drawPockets(Canvas canvas) {
     for (final pos in pocketPositions) {
       final o = Offset(pos.x, pos.y);
-      canvas.drawCircle(o, pocketRadius, Paint()..color = const Color(0xFF080808));
-      canvas.drawCircle(
-        o, pocketRadius * 0.8,
-        Paint()
-          ..color = const Color(0x66000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.12),
-      );
-      canvas.drawCircle(
-        o, pocketRadius,
-        Paint()
-          ..color = const Color(0xFF4A3520)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.06,
-      );
+
+      // Shadow ring
+      canvas.drawCircle(o, pocketRadius * 1.1,
+          Paint()..color = _holeSh..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.25));
+
+      // White hole (shows white background beneath the gray table)
+      canvas.drawCircle(o, pocketRadius, Paint()..color = _hole);
     }
-  }
-
-  void _drawRails(Canvas canvas) {
-    final railPaint = Paint()..color = const Color(0xFF5C3D1E);
-    canvas.drawRect(Rect.fromLTWH(0, 0, tableWidth, railThickness), railPaint);
-    canvas.drawRect(
-        Rect.fromLTWH(0, tableHeight - railThickness, tableWidth, railThickness), railPaint);
-    canvas.drawRect(Rect.fromLTWH(0, 0, railThickness, tableHeight), railPaint);
-    canvas.drawRect(
-        Rect.fromLTWH(tableWidth - railThickness, 0, railThickness, tableHeight), railPaint);
-
-    final hlPaint = Paint()
-      ..color = const Color(0xFF7A5230)
-      ..strokeWidth = 0.04;
-    canvas.drawLine(
-        const Offset(0, railThickness), Offset(tableWidth, railThickness), hlPaint);
-    canvas.drawLine(
-        Offset(0, tableHeight - railThickness),
-        Offset(tableWidth, tableHeight - railThickness),
-        hlPaint);
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, tableWidth, tableHeight),
-      Paint()
-        ..color = const Color(0xFF2C1A08)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.12,
-    );
   }
 }
