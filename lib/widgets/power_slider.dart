@@ -48,7 +48,7 @@ class _PowerPainter extends CustomPainter {
     );
 
     // Track background
-    final bgPaint = Paint()..color = Colors.white10;
+    final bgPaint = Paint()..color = Colors.black.withOpacity(0.07);
     canvas.drawRRect(rr, bgPaint);
 
     // Filled portion (bottom up)
@@ -85,7 +85,7 @@ class _PowerPainter extends CustomPainter {
     final thumbY = size.height - size.height * value;
     final thumbPaint = Paint()..color = Colors.white;
     final thumbShadow = Paint()
-      ..color = Colors.black38
+      ..color = Colors.black26
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawCircle(Offset(size.width / 2, thumbY + 1), 7, thumbShadow);
     canvas.drawCircle(Offset(size.width / 2, thumbY), 7, thumbPaint);
@@ -94,7 +94,7 @@ class _PowerPainter extends CustomPainter {
     canvas.drawRRect(
       rr,
       Paint()
-        ..color = Colors.white12
+        ..color = Colors.black.withOpacity(0.12)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );

@@ -1,4 +1,4 @@
-import 'dart:math';
+import 'dart:math' show atan2, cos, min, sin, sqrt;
 import 'dart:ui' show Offset;
 import 'package:flame_forge2d/flame_forge2d.dart';
 import 'package:flutter/material.dart' show Colors, Color, ValueNotifier;
@@ -14,6 +14,9 @@ class PoolGame extends Forge2DGame {
 
   PoolGame({required this.onShotEvaluated})
       : super(gravity: Vector2.zero());
+
+  @override
+  Color backgroundColor() => const Color(0xFFFFFFFF);
 
   final stateNotifier = ValueNotifier<GameState>(GameState.aiming);
 
@@ -33,13 +36,19 @@ class PoolGame extends Forge2DGame {
 
   final List<Vector2> _pocketPositions = <Vector2>[];
 
-  // Called every time the screen resizes — the right place to set camera so it
-  // always fills the available area regardless of window/device size.
+  /// Called every time the screen/widget resizes — the correct place to
+  /// configure camera so the table always fills the viewport.
   @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
-    // visibleGameSize auto-calculates zoom so the table fits with 6% padding
-    camera.viewfinder.visibleGameSize = Vector2(tableW * 1.06, tableH * 1.06);
+    if (size.x <= 0 || size.y <= 0) return;
+
+    // 8% padding on all sides
+    const pad = 1.08;
+    final zoomX = size.x / (tableW * pad);
+    final zoomY = size.y / (tableH * pad);
+    camera.viewfinder.zoom = min(zoomX, zoomY);
+    // Center on table middle
     camera.viewfinder.position = Vector2(tableW / 2, tableH / 2);
   }
 
