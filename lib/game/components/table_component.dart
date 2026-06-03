@@ -70,14 +70,8 @@ class TableComponent extends BodyComponent {
 
   void _drawPockets(Canvas canvas) {
     for (final pos in pocketPositions) {
-      final o = Offset(pos.x, pos.y);
-
-      // Shadow ring
-      canvas.drawCircle(o, pocketRadius * 1.1,
-          Paint()..color = _holeSh..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.25));
-
-      // White hole (shows white background beneath the gray table)
-      canvas.drawCircle(o, pocketRadius, Paint()..color = _hole);
+      // Plain white circle — shows the white page background through the gray felt
+      canvas.drawCircle(Offset(pos.x, pos.y), pocketRadius, Paint()..color = _hole);
     }
   }
 }

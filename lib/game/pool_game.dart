@@ -56,6 +56,8 @@ class PoolGame extends Forge2DGame {
   int _currentTargetIndex = 0;
   bool _ballsMoving = false;
   int _prevPocketedCount = 0;
+  bool _spinApplied = false;       // spin impulse applied this shot?
+  Vector2 _shotDir = Vector2(1,0); // direction cue was shot (stored for post-contact spin)
 
   final List<_PoolSnapshot> _snapshots = [];
 
@@ -245,19 +247,19 @@ class PoolGame extends Forge2DGame {
   void shoot({required Offset hitPoint, required double power}) {
     if (stateNotifier.value == GameState.rolling) return;
     hitPointNotifier.value = hitPoint;
-
-    // Save snapshot BEFORE shot
     _saveSnapshot();
 
     final angle   = autoAimAngle;
-    const maxForce = 190.0;
-    final force   = Vector2(cos(angle), sin(angle)) * (power * maxForce);
-    final lateral = Vector2(-sin(angle), cos(angle)) * (hitPoint.dx * power * 12.0);
-    final angImp  = hitPoint.dx * power * 3.5;
+    _shotDir      = Vector2(cos(angle), sin(angle)); // store for post-contact spin
+    _spinApplied  = false;
 
-    cueBall.body.applyLinearImpulse(force);
-    cueBall.body.applyLinearImpulse(lateral);
-    cueBall.body.applyAngularImpulse(angImp);
+    // ── PHYSICS RULE: cue ball travels STRAIGHT to object ball.
+    //    Spin is applied at the moment of contact, not at shoot time.
+    //    (Lateral pre-shot impulse was the bug — it curved the ball before impact.)
+    const maxForce = 190.0;
+    cueBall.body.applyLinearImpulse(_shotDir * (power * maxForce));
+    // Angular impulse only for visual rolling effect (no trajectory effect in 2D)
+    cueBall.body.applyAngularImpulse(hitPoint.dx * power * 2.0);
 
     stateNotifier.value    = GameState.rolling;
     _prevPocketedCount     = objectBalls.where((b) => !b.inPlay).length;
@@ -307,6 +309,7 @@ class PoolGame extends Forge2DGame {
       }
     }
     _currentTargetIndex = snap.targetIndex;
+    _spinApplied = false;
     lastScoreNotifier.value = null;
     stateNotifier.value = GameState.aiming;
   }
@@ -315,9 +318,46 @@ class PoolGame extends Forge2DGame {
   bool get _anyBallMoving => <BallComponent>[cueBall, ...objectBalls]
       .any((b) => b.inPlay && b.body.linearVelocity.length2 > 0.01);
 
+  /// Detects the first frame the cue ball contacts an object ball and applies
+  /// the spin impulse.  This runs AFTER super.update() so the collision has
+  /// already been resolved by the physics engine.
+  void _applySpinAtContact() {
+    if (_spinApplied || stateNotifier.value != GameState.rolling) return;
+    if (!cueBall.isLoaded || !cueBall.inPlay) return;
+
+    for (final ball in objectBalls) {
+      if (!ball.inPlay || !ball.isLoaded) continue;
+      final dist = (cueBall.body.position - ball.body.position).length;
+      if (dist > BallComponent.radius * 2.3) continue; // not touching yet
+
+      // Contact detected — apply spin impulse once
+      _spinApplied = true;
+      final spin  = hitPointNotifier.value;
+      final speed = cueBall.body.linearVelocity.length;
+      if (speed < 0.5) return; // too slow, ignore
+
+      // _shotDir is the original cue direction (straight line)
+      // perp is 90° to it (the natural deflection direction after collision)
+      final perp = Vector2(-_shotDir.y, _shotDir.x);
+
+      // Top spin (dy < 0 = hit above centre): add follow-through along shot dir
+      // Back spin (dy > 0 = hit below centre): reverse along shot dir
+      final followMag = -spin.dy * speed * 0.65;
+      final followImp = _shotDir * (followMag * cueBall.body.mass);
+
+      // English (dx): shifts the cue ball left/right after contact
+      final englishMag = spin.dx * speed * 0.4;
+      final englishImp = perp * (englishMag * cueBall.body.mass);
+
+      cueBall.body.applyLinearImpulse(followImp + englishImp);
+      return;
+    }
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
+    _applySpinAtContact();
     _checkPocketCollisions();
 
     final moving = _anyBallMoving;
