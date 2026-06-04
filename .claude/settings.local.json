@@ -14,7 +14,8 @@
       "Bash(git branch *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(open /Users/leomok/workspace/pool-tutorial/build/macos/Build/Products/Debug/pool_tutorial.app)"
+      "Bash(open /Users/leomok/workspace/pool-tutorial/build/macos/Build/Products/Debug/pool_tutorial.app)",
+      "Bash(grep -v \"^Analyzing\\\\|^$\")"
     ]
   }
 }

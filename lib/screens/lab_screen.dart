@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flame/game.dart';
 import '../game/lab/lab_game.dart';
 import '../widgets/power_slider.dart';
-import '../widgets/spin_slider.dart';
+import '../widgets/hit_point_selector.dart';
 
 class LabScreen extends StatefulWidget {
   const LabScreen({super.key});
@@ -14,9 +14,9 @@ class LabScreen extends StatefulWidget {
 class _LabScreenState extends State<LabScreen>
     with SingleTickerProviderStateMixin {
   late LabGame _game;
-  double _power           = 0.5;
-  double _spin            = 0.0;
-  double _cutAngle        = 0;
+  double _power     = 0.5;
+  Offset _hitPoint  = Offset.zero; // x = side spin, y = top/bottom spin (−1..1)
+  double _cutAngle  = 0;
   double _distance        = 6.0;
   double _cushionSoftness = 0.3;
   bool   _drawerOpen = false;
@@ -69,7 +69,12 @@ class _LabScreenState extends State<LabScreen>
     _closeDrawer();
   }
 
-  void _shoot() => _game.shoot(power: _power, spin: _spin);
+  // y axis on the ball: up = top spin (+1), down = back spin (−1) → invert dy
+  void _shoot() => _game.shoot(
+        power: _power,
+        spin: -_hitPoint.dy,       // ball y up = top spin
+        sideSpin: _hitPoint.dx,    // ball x right = right spin
+      );
   void _reset() => _game.setCutAngle(_cutAngle);
 
   @override
@@ -363,7 +368,7 @@ class _LabScreenState extends State<LabScreen>
           color: Color(0xFF8E8E93),
           fontFamily: 'Courier New'));
 
-  // ── Controls: power + spin + shoot/reset ──────────────────────────────────
+  // ── Controls: power + hit point + shoot/reset ────────────────────────────
   Widget _buildControls() {
     return Container(
       color: Colors.white,
@@ -372,6 +377,7 @@ class _LabScreenState extends State<LabScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Power slider
           Column(mainAxisSize: MainAxisSize.min, children: [
             _label('POWER'),
             const SizedBox(height: 6),
@@ -380,29 +386,21 @@ class _LabScreenState extends State<LabScreen>
                 onChanged: (v) => setState(() => _power = v)),
           ]),
 
-          const SizedBox(width: 20),
+          const SizedBox(width: 24),
 
+          // Hit point selector (2D spin)
           Column(mainAxisSize: MainAxisSize.min, children: [
-            _label('SPIN'),
+            _label('HIT POINT'),
             const SizedBox(height: 6),
-            SpinSlider(
-                value: _spin,
-                onChanged: (v) => setState(() => _spin = v)),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: SpinSlider.width,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                _spinLabel('TOP', const Color(0xFFE74C3C), _spin > 0.05),
-                const SizedBox(height: 2),
-                _spinLabel('CTR', Colors.black38, _spin.abs() <= 0.05),
-                const SizedBox(height: 2),
-                _spinLabel('BTM', const Color(0xFF3498DB), _spin < -0.05),
-              ]),
+            HitPointSelector(
+              value: _hitPoint,
+              onChanged: (v) => setState(() => _hitPoint = v),
             ),
           ]),
 
-          const SizedBox(width: 20),
+          const SizedBox(width: 24),
 
+          // Shoot / reset button
           ListenableBuilder(
             listenable: _game.stateNotifier,
             builder: (_, __) {
@@ -445,12 +443,4 @@ class _LabScreenState extends State<LabScreen>
   Widget _label(String t) => Text(t,
       style: const TextStyle(fontSize: 10, letterSpacing: 2,
           color: Colors.black38, fontFamily: 'Courier New'));
-
-  Widget _spinLabel(String t, Color color, bool active) => Text(t,
-      style: TextStyle(
-        fontSize: 8,
-        fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-        color: active ? color : Colors.black26,
-        fontFamily: 'Courier New',
-      ));
 }

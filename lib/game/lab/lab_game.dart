@@ -70,17 +70,32 @@ class LabGame extends Forge2DGame {
   /// Box2D 的 restitution 合成用 max()，牆的設定對高 restitution 的球無效，
   /// 因此在偵測到碰庫後直接縮減速度來模擬能量損失。
   /// 減小 → 碰庫後球速更快衰減；建議範圍 0.90 ~ 0.98。
-  static const double kRailVelocityKeep = 0.94;
+  static const double kRailVelocityKeep = 0.8;
 
   // ── 庫邊軟硬度（Cushion softness）────────────────────────────────────────
   /// 大力撞庫時切向速度（沿庫邊方向）最多被吸收的比例。
   /// softness = 0 時不吸收（完全硬庫）；softness = 1 時以最大比例吸收。
   /// 吸收量隨法向衝擊速度線性增加，模擬「越大力打庫，反射角越小」的真實感。
-  static const double kCushionMaxAngleReduction = 0.10;
+  static const double kCushionMaxAngleReduction = 0.03;
 
   /// 達到最大吸收效果的參考撞庫法向速度（物理單位 / 秒）。
   /// 法向速度超過此值後吸收量不再增加（clamp 至 1.0）。
   static const double kCushionRefSpeed = 18.0;
+
+  // ── 左右旋（Side spin / English）─────────────────────────────────────────
+  /// 碰撞時左右旋對母球施加的橫向側滑速度，佔母球切向速度的比例。
+  /// 0度直球切向速度=0，故無橫向效果；夾角越大效果越明顯。
+  /// 調大 → 側滑更誇張；建議範圍 0.3 ~ 0.8。
+  static const double kSideSpinThrowFraction = 0.5;
+
+  /// 旋轉球在庫邊接觸點的最大表面切向速度（sideSpin=1 時，物理單位/秒）。
+  /// 摩擦力將球的切向速度往此表面速度拉，自然產生順旋加速、逆旋減速甚至反轉。
+  /// 調大 → 旋轉對反射角影響更劇烈。
+  static const double kSideSpinSurfaceSpeed = 6.0;
+
+  /// 庫邊切向摩擦力佔滑動速度的比例（0 = 無摩擦，1 = 完全抓住）。
+  /// 調大 → 旋轉效果更快達到；建議範圍 0.3 ~ 0.8。
+  static const double kSideSpinRailFriction = 0.55;
 
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -114,6 +129,8 @@ class LabGame extends Forge2DGame {
   bool _firstCollisionDone = false;
   double _lastPower       = 0.5;
   double _lastSpin        = 0.0;
+  double _lastSideSpin    = 0.0;
+  double _currentSideSpin = 0.0;
   double _lastCutAngle    = 0.0;
   Vector2 _prevCueVel     = Vector2.zero();
   Vector2 _prevTargetVel  = Vector2.zero();
@@ -223,10 +240,12 @@ class LabGame extends Forge2DGame {
     if (_gameLoaded) setCutAngle(_lastCutAngle);
   }
 
-  void shoot({required double power, double spin = 0.0}) {
+  void shoot({required double power, double spin = 0.0, double sideSpin = 0.0}) {
     if (stateNotifier.value != LabState.aiming) return;
-    _lastPower     = power;
-    _lastSpin      = spin.clamp(-1.0, 1.0);
+    _lastPower      = power;
+    _lastSpin       = spin.clamp(-1.0, 1.0);
+    _lastSideSpin   = sideSpin.clamp(-1.0, 1.0);
+    _currentSideSpin = _lastSideSpin;
     _ballsContacting    = false;
     _firstCollisionDone = false;
     _spinRemaining      = 0.0;
@@ -373,6 +392,16 @@ class LabGame extends Forge2DGame {
       }
     }
 
+    // ── Side spin: lateral deflection on cue ball only ───────────────────
+    // At 0° cut the cue ball has no tangential velocity → no lateral effect.
+    // At larger cut angles cueTang grows → side spin redirects the cue ball.
+    if (_currentSideSpin.abs() > 0.01) {
+      final tang      = Vector2(-normal.y, normal.x);
+      final tangSpeed = cueTang.length;           // 0 at straight shot, grows with cut angle
+      final deflV     = _currentSideSpin * kSideSpinThrowFraction * tangSpeed;
+      newCueVel      += tang * deflV;
+    }
+
     cueBall.body.linearVelocity    = newCueVel;
     targetBall.body.linearVelocity = newTargetVel;
 
@@ -385,8 +414,9 @@ class LabGame extends Forge2DGame {
   /// Reduce both spin states by [fraction] (0 = no change, 1 = zeroed out).
   void _decaySpin(double fraction) {
     final keep = 1.0 - fraction;
-    _preCollisionSpin *= keep;
-    _spinRemaining    *= keep;
+    _preCollisionSpin  *= keep;
+    _spinRemaining     *= keep;
+    _currentSideSpin   *= keep;
   }
 
   /// Detect a rail bounce by comparing the cue ball's velocity sign before and
@@ -422,6 +452,44 @@ class LabGame extends Forge2DGame {
           final reduction = cushionSoftness * impactFraction * kCushionMaxAngleReduction;
           vel = Vector2(vel.x * (1.0 - reduction), vel.y);
         }
+        cueBall.body.linearVelocity = vel;
+      }
+
+      // ── Side spin: friction-based rail model ─────────────────────────────
+      // Compute the spin's surface velocity at the contact point, then apply
+      // friction that pulls the ball's tangential velocity toward that surface
+      // speed.  This naturally produces:
+      //   • running english  → tangential speed increases
+      //   • checking english → tangential speed decreases
+      //   • strong checking at shallow angle → tangential reverses (ball kicks
+      //     back along the rail instead of continuing forward)
+      //
+      // Sign derivation (top-down view, y increases downward):
+      //   Vertical rail (xBounce):
+      //     Right wall contact at +x: right-CW spin → surface moves −y (up)
+      //     Left wall contact at −x:  right-CW spin → surface moves +y (down)
+      //     ⇒ spinSurface_y = (rightWall ? −1 : +1) × sideSpin × kSideSpinSurfaceSpeed
+      //   Horizontal rail (yBounce):
+      //     Bottom wall contact at +y: right-CW spin → surface moves +x (right)
+      //     Top wall contact at −y:    right-CW spin → surface moves −x (left)
+      //     ⇒ spinSurface_x = (bottomWall ? +1 : −1) × sideSpin × kSideSpinSurfaceSpeed
+      if (_currentSideSpin.abs() > 0.01) {
+        var vel = cueBall.body.linearVelocity;
+        final s = _currentSideSpin;
+        final f = kSideSpinRailFriction;
+
+        if (xBounce) {
+          final spinSurface = (prev.x > 0 ? -1.0 : 1.0) * s * kSideSpinSurfaceSpeed;
+          final newVy = vel.y * (1.0 - f) + f * spinSurface;
+          vel = Vector2(vel.x, newVy);
+        }
+
+        if (yBounce) {
+          final spinSurface = (prev.y > 0 ? 1.0 : -1.0) * s * kSideSpinSurfaceSpeed;
+          final newVx = vel.x * (1.0 - f) + f * spinSurface;
+          vel = Vector2(newVx, vel.y);
+        }
+
         cueBall.body.linearVelocity = vel;
       }
 
