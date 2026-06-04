@@ -14,8 +14,81 @@ class LabGame extends Forge2DGame {
   @override
   Color backgroundColor() => const Color(0xFFFFFFFF);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 可調整參數（Tunable parameters）
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── 出桿力道 ───────────────────────────────────────────────────────────────
+  /// 母球每次擊打的最大衝力（N·s）。
+  /// 增大 → 球速更快；減小 → 球速更慢。
+  static const double kMaxForce = 80.0;
+
+  // ── 循跡取樣 ────────────────────1──────────────────────────────────────────
+  /// 母球軌跡相鄰取樣點的最小距離（物理單位）。
+  /// 增大 → 軌跡點較稀疏；減小 → 軌跡點較密集。
+  static const double kTrailSampleDist = 0.18;
+
+  // ── 碰前旋轉衰減 ──────────────────────────────────────────────────────────
+  /// 旋轉衰減基礎速率（spin units / 秒，力道 = 1 時的值）。
+  ///   decayRate = kPreSpinDecayRate / (power² + 0.1)
+  /// 增大 → 低力道時旋轉消失更快（球更早進入自然滾動）。
+  static const double kPreSpinDecayRate = 0.2;
+
+  /// 碰前旋轉對母球施加的額外摩擦力（N / spin unit）。
+  /// 增大 → 上旋加速 / 下旋減速效果更明顯；減小 → 效果更微弱。
+  static const double kPreSpinForce = 18.0;
+
+  // ── 碰後旋轉效果 ──────────────────────────────────────────────────────────
+  /// 碰後旋轉力持續的最長時間（秒，對應 spin = ±1 時）。
+  /// 增大 → 上旋 / 下旋延伸效果持續更久。
+  static const double kSpinMaxDuration = 0.5;
+
+  /// 碰後旋轉對母球施加的力大小（N）。
+  /// 增大 → 上旋追球 / 下旋煞車效果更強。
+  static const double kSpinForce = 80.0;
+
+  // ── 跟進（Follow）效果 ────────────────────────────────────────────────────
+  /// 力道超過此閾值時，母球不再跟進（純定桿）。
+  /// 減小 → 更難觸發跟進；增大 → 高力道也有跟進效果。
+  static const double kFollowThreshold = 0.65;
+
+  /// 跟進效果最大前進速度比例（0 = 完全不跟進，1 = 全速跟進）。
+  /// 增大 → 跟進路徑更長；減小 → 跟進路徑更短。
+  static const double kFollowScale = 0.45;
+
+  // ── 旋轉碰撞衰減 ──────────────────────────────────────────────────────────
+  /// 母球碰庫（反彈）時，剩餘旋轉量減少的比例（0 = 不衰減，1 = 完全消失）。
+  /// 增大 → 碰庫後旋轉效果更快消失。
+  static const double kRailSpinDecay = 0.25;
+
+  /// 母球碰到目標球時，旋轉量減少的比例（0 = 不衰減，1 = 完全消失）。
+  /// 增大 → 碰球後旋轉效果更快消失。
+  static const double kBallSpinDecay = 0.20;
+
+  // ── 碰庫動能損耗 ──────────────────────────────────────────────────────────
+  /// 母球每次碰庫後速度保留的比例（1.0 = 完全彈性，無損耗）。
+  /// Box2D 的 restitution 合成用 max()，牆的設定對高 restitution 的球無效，
+  /// 因此在偵測到碰庫後直接縮減速度來模擬能量損失。
+  /// 減小 → 碰庫後球速更快衰減；建議範圍 0.90 ~ 0.98。
+  static const double kRailVelocityKeep = 0.94;
+
+  // ── 庫邊軟硬度（Cushion softness）────────────────────────────────────────
+  /// 大力撞庫時切向速度（沿庫邊方向）最多被吸收的比例。
+  /// softness = 0 時不吸收（完全硬庫）；softness = 1 時以最大比例吸收。
+  /// 吸收量隨法向衝擊速度線性增加，模擬「越大力打庫，反射角越小」的真實感。
+  static const double kCushionMaxAngleReduction = 0.10;
+
+  /// 達到最大吸收效果的參考撞庫法向速度（物理單位 / 秒）。
+  /// 法向速度超過此值後吸收量不再增加（clamp 至 1.0）。
+  static const double kCushionRefSpeed = 18.0;
+
+  // ══════════════════════════════════════════════════════════════════════════
+
   // ── Public notifiers ─────────────────────────────────────────────────────
   final stateNotifier = ValueNotifier<LabState>(LabState.aiming);
+
+  /// 庫邊軟硬度（0.0 = 全硬，1.0 = 全軟）。可由 UI 動態調整。
+  double cushionSoftness = 0.3;
 
   // ── Ball references ───────────────────────────────────────────────────────
   late BallComponent cueBall;
@@ -29,7 +102,7 @@ class LabGame extends Forge2DGame {
   // Fixed layout: target ball in centre, pocket at bottom-right corner
   static Vector2 get targetPocket => Vector2(tableW, tableH);
   static Vector2 get _targetPos   => Vector2(tableW * 0.50, tableH * 0.50);
-  static const double _cueDist    = 6.0;
+  double _cueDist = 6.0;
 
   final List<Vector2> _pocketPositions = [];
   final Map<BallComponent, Vector2> _prevPositions = {};
@@ -37,24 +110,22 @@ class LabGame extends Forge2DGame {
   // ── Shot state ────────────────────────────────────────────────────────────
   bool _gameLoaded        = false;
   bool _ballsMoving       = false;
-  bool _ballsContacting   = false; // true while the two balls are touching
-  bool _firstCollisionDone = false; // follow/spin only applies on the first hit
+  bool _ballsContacting   = false;
+  bool _firstCollisionDone = false;
   double _lastPower       = 0.5;
-  double _lastSpin        = 0.0;  // -1 back spin … 0 centre … +1 top spin
+  double _lastSpin        = 0.0;
+  double _lastCutAngle    = 0.0;
   Vector2 _prevCueVel     = Vector2.zero();
   Vector2 _prevTargetVel  = Vector2.zero();
   Vector2 _shotDir        = Vector2(1, 0);
 
   // ── Cue ball trail ────────────────────────────────────────────────────────
-  /// Positions sampled while the cue ball is rolling.  Cleared on each new shot.
   final List<Vector2> cueTrail = [];
-  static const double _trailSampleDist = 0.18; // min distance between samples
 
-  // ── Post-collision spin state ──────────────────────────────────────────────
-  // After the cue ball hits the target ball, we apply a decaying forward/back
-  // force for a duration proportional to |spin|.
-  static const double kSpinMaxDuration = 0.5;  // seconds at max spin
-  static const double kSpinForce       = 28.0; // force magnitude
+  // ── Pre-collision spin state ──────────────────────────────────────────────
+  double _preCollisionSpin = 0.0;
+
+  // ── Post-collision spin state ─────────────────────────────────────────────
   double _spinRemaining = 0.0;
 
   // ── Camera ────────────────────────────────────────────────────────────────
@@ -125,6 +196,7 @@ class LabGame extends Forge2DGame {
   /// Reposition cue ball for the given cut angle and reset both balls.
   void setCutAngle(double degrees) {
     if (!_gameLoaded) return;
+    _lastCutAngle = degrees;
     final newPos = _clampedCuePos(degrees);
 
     for (final ball in [cueBall, targetBall]) {
@@ -146,6 +218,11 @@ class LabGame extends Forge2DGame {
     stateNotifier.value = LabState.aiming;
   }
 
+  void setDistance(double dist) {
+    _cueDist = dist;
+    if (_gameLoaded) setCutAngle(_lastCutAngle);
+  }
+
   void shoot({required double power, double spin = 0.0}) {
     if (stateNotifier.value != LabState.aiming) return;
     _lastPower     = power;
@@ -153,12 +230,12 @@ class LabGame extends Forge2DGame {
     _ballsContacting    = false;
     _firstCollisionDone = false;
     _spinRemaining      = 0.0;
+    _preCollisionSpin   = _lastSpin;
     cueTrail.clear();
 
     final angle = _autoAimAngle;
     _shotDir = Vector2(cos(angle), sin(angle));
 
-    const kMaxForce = 80.0;
     cueBall.body.applyLinearImpulse(_shotDir * (power * power * kMaxForce));
 
     stateNotifier.value = LabState.rolling;
@@ -203,6 +280,8 @@ class LabGame extends Forge2DGame {
     super.update(dt);
 
     _sampleTrail();
+    _detectRailBounce();
+    _applyPreCollisionSpin(dt);
     _handleManualCollision();
     _applySpinForce(dt);
     _checkPocketCollisions();
@@ -216,30 +295,12 @@ class LabGame extends Forge2DGame {
     if (!cueBall.isLoaded || !cueBall.inPlay) return;
     final pos = cueBall.body.position.clone();
     if (cueTrail.isEmpty ||
-        (pos - cueTrail.last).length >= _trailSampleDist) {
+        (pos - cueTrail.last).length >= kTrailSampleDist) {
       cueTrail.add(pos);
     }
   }
 
   // ── Manual ball-ball collision ────────────────────────────────────────────
-  //
-  // Physics model (centre-ball hit only — lab has no spin):
-  //
-  //   • Standard elastic collision: target gets the normal velocity component,
-  //     cue ball keeps the tangential component (90-degree rule).
-  //
-  //   • Forward "rolling follow" effect:
-  //     At low power the cue ball has time to develop natural forward roll
-  //     before contact, so it follows a little.  At high power it is still
-  //     sliding → stops dead after transfer.
-  //
-  //     followFraction = clamp(1 − power / kFollowThreshold, 0, 1)
-  //     power ≥ kFollowThreshold → 0 (pure stun, ball stops)
-  //     power = 0               → 1 (maximum follow)
-  //
-  static const double kFollowThreshold = 0.65;
-  static const double kFollowScale     = 0.45; // limits max forward carry
-
   void _handleManualCollision() {
     if (stateNotifier.value != LabState.rolling) return;
     if (!cueBall.isLoaded || !cueBall.inPlay) return;
@@ -304,14 +365,71 @@ class LabGame extends Forge2DGame {
       // Override cue velocity: tangent + partial forward follow
       newCueVel = cueTang + normal * (cueNorm * followFraction * kFollowScale);
 
-      // Arm spin force
-      if (_lastSpin.abs() > 0.01) {
-        _spinRemaining = _lastSpin.abs() * kSpinMaxDuration;
+      // Arm post-collision spin using whatever spin survived the pre-collision decay.
+      // Duration also scales with power: at low power the ball is slow, so
+      // spin-to-roll transition completes faster → shorter effect.
+      if (_preCollisionSpin.abs() > 0.01) {
+        _spinRemaining = _preCollisionSpin.abs() * kSpinMaxDuration * _lastPower;
       }
     }
 
     cueBall.body.linearVelocity    = newCueVel;
     targetBall.body.linearVelocity = newTargetVel;
+
+    // Spin loses energy on contact with another ball
+    _decaySpin(kBallSpinDecay);
+  }
+
+  // ── Spin decay helpers ────────────────────────────────────────────────────
+
+  /// Reduce both spin states by [fraction] (0 = no change, 1 = zeroed out).
+  void _decaySpin(double fraction) {
+    final keep = 1.0 - fraction;
+    _preCollisionSpin *= keep;
+    _spinRemaining    *= keep;
+  }
+
+  /// Detect a rail bounce by comparing the cue ball's velocity sign before and
+  /// after the physics step.  A reversal in either axis with enough speed means
+  /// the ball just reflected off a cushion.
+  void _detectRailBounce() {
+    if (stateNotifier.value != LabState.rolling) return;
+    if (!cueBall.isLoaded || !cueBall.inPlay) return;
+
+    const minSpeed = 0.5; // ignore tiny velocities (avoid false positives at rest)
+    final prev = _prevCueVel;
+    final curr = cueBall.body.linearVelocity;
+
+    final xBounce = prev.x.abs() > minSpeed && curr.x * prev.x < 0;
+    final yBounce = prev.y.abs() > minSpeed && curr.y * prev.y < 0;
+
+    if (xBounce || yBounce) {
+      _decaySpin(kRailSpinDecay);
+
+      // ── Cushion angle reduction ───────────────────────────────────────────
+      // 軟庫吸收切向（沿庫邊）速度，使反射角隨撞庫力道增大而縮小。
+      // xBounce → 法向為 X；切向為 Y（沿水平庫邊）。
+      // yBounce → 法向為 Y；切向為 X（沿垂直庫邊）。
+      if (cushionSoftness > 0) {
+        var vel = cueBall.body.linearVelocity;
+        if (xBounce) {
+          final impactFraction = (prev.x.abs() / kCushionRefSpeed).clamp(0.0, 1.0);
+          final reduction = cushionSoftness * impactFraction * kCushionMaxAngleReduction;
+          vel = Vector2(vel.x, vel.y * (1.0 - reduction));
+        }
+        if (yBounce) {
+          final impactFraction = (prev.y.abs() / kCushionRefSpeed).clamp(0.0, 1.0);
+          final reduction = cushionSoftness * impactFraction * kCushionMaxAngleReduction;
+          vel = Vector2(vel.x * (1.0 - reduction), vel.y);
+        }
+        cueBall.body.linearVelocity = vel;
+      }
+
+      // Manually bleed off kinetic energy — Box2D max(restitution) mixing
+      // means the wall's lower restitution has no effect when the ball's is higher.
+      cueBall.body.linearVelocity =
+          cueBall.body.linearVelocity * kRailVelocityKeep;
+    }
   }
 
   /// Returns the first point on segment [from→to] that is within [r] of [center],
@@ -334,6 +452,42 @@ class LabGame extends Forge2DGame {
     return from + d * t;
   }
 
+  // ── Pre-collision spin-to-roll transition ─────────────────────────────────
+  //
+  // Models felt friction converting the ball's initial spin into natural forward
+  // roll.  _preCollisionSpin decays linearly toward 0 at a rate that is faster
+  // the lower the power (less forward momentum to resist friction).
+  //
+  //   backspin (_preCollisionSpin < 0): backward force → extra deceleration
+  //   topspin  (_preCollisionSpin > 0): forward force  → slight acceleration
+  //
+  // Once _preCollisionSpin reaches 0 the ball rolls naturally (no extra force).
+  // At collision time whatever spin remains becomes the post-collision spin budget.
+  //
+  void _applyPreCollisionSpin(double dt) {
+    if (_firstCollisionDone) return;
+    if (stateNotifier.value != LabState.rolling) return;
+    if (!cueBall.isLoaded || !cueBall.inPlay) return;
+    if (_preCollisionSpin.abs() < 0.001) return;
+
+    // Decay rate: inversely proportional to power² so low-power shots lose
+    // their spin quickly and arrive as a naturally rolling ball.
+    final decayRate = kPreSpinDecayRate / (_lastPower * _lastPower + 0.1);
+    final step = decayRate * dt;
+
+    if (_preCollisionSpin > 0) {
+      _preCollisionSpin = (_preCollisionSpin - step).clamp(0.0, 1.0);
+    } else {
+      _preCollisionSpin = (_preCollisionSpin + step).clamp(-1.0, 0.0);
+    }
+
+    // Apply friction force proportional to remaining spin
+    final vel = cueBall.body.linearVelocity;
+    if (vel.length < 0.01) return;
+    final forceDir = _preCollisionSpin < 0 ? -(vel.normalized()) : vel.normalized();
+    cueBall.body.applyForce(forceDir * (_preCollisionSpin.abs() * kPreSpinForce));
+  }
+
   // ── Post-collision spin force ─────────────────────────────────────────────
   //
   // After the cue ball strikes the target, we apply a continuous force along
@@ -352,11 +506,11 @@ class LabGame extends Forge2DGame {
       return;
     }
 
-    final totalDuration = _lastSpin.abs() * kSpinMaxDuration;
+    final totalDuration = _preCollisionSpin.abs() * kSpinMaxDuration;
     // Linear fade: full force at start, zero at end
-    final fade      = (_spinRemaining / totalDuration).clamp(0.0, 1.0);
+    final fade      = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
     final spinDir   = _lastSpin > 0 ? _shotDir : -_shotDir;
-    final forceMag  = _lastSpin.abs() * kSpinForce * fade;
+    final forceMag  = _preCollisionSpin.abs() * kSpinForce * fade;
 
     cueBall.body.applyForce(spinDir * forceMag);
     _spinRemaining = (_spinRemaining - dt).clamp(0.0, double.infinity);

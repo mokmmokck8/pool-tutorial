@@ -1,5 +1,5 @@
 import 'dart:math' show cos, sin;
-import 'dart:ui' show Canvas, Offset, Paint, PaintingStyle, Path, Color;
+import 'dart:ui' show Canvas, Offset, Paint, PaintingStyle, Path, Color, StrokeCap;
 import 'package:flame_forge2d/flame_forge2d.dart';
 import '../components/ball_component.dart';
 import 'lab_game.dart';
@@ -77,18 +77,18 @@ class LabAimOverlay extends BodyComponent {
 
   void _drawTrail(Canvas canvas, List<Vector2> trail) {
     if (trail.length < 2) return;
-    final dotPaint = Paint()..color = const Color(0xBBFFFFFF);
-    final shadowPaint = Paint()..color = const Color(0x44000000);
-    const dotR = 0.055;
-    for (int i = 0; i < trail.length; i++) {
-      // Fade out older points (head = oldest, tail = newest)
-      final t = i / (trail.length - 1);
-      final alpha = (80 + (t * 175)).round().clamp(0, 255);
-      dotPaint.color = Color.fromARGB(alpha, 255, 255, 255);
-      shadowPaint.color = Color.fromARGB((alpha * 0.35).round(), 0, 0, 0);
-      final p = Offset(trail[i].x, trail[i].y);
-      canvas.drawCircle(p, dotR + 0.01, shadowPaint);
-      canvas.drawCircle(p, dotR, dotPaint);
+    final n = trail.length;
+    for (int i = 0; i < n - 1; i++) {
+      // Fade: older segments are more transparent, newest are bright
+      final t = i / (n - 2).clamp(1, n);
+      final alpha = (60 + (t * 170)).round().clamp(0, 255);
+      final paint = Paint()
+        ..color = Color.fromARGB(alpha, 255, 255, 255)
+        ..strokeWidth = 0.06
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      _drawDashed(canvas, trail[i], trail[i + 1], paint,
+          dashLen: 0.22, gapLen: 0.14);
     }
   }
 
