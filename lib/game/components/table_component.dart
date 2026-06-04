@@ -14,10 +14,9 @@ class TableComponent extends BodyComponent {
   static const double railThickness = 0.25;
   static const double pocketRadius  = 0.50;
 
-  static const _felt    = Color(0xFFCFD8DC); // blue-gray felt
-  static const _feltDk  = Color(0xFFB0BEC5); // slightly darker for subtle gradient
-  static const _hole    = Color(0xFFFFFFFF); // white = shows background
-  static const _holeSh  = Color(0x22000000); // pocket shadow ring
+  static const _felt   = Color(0xFFCFD8DC); // blue-gray felt
+  static const _feltDk = Color(0xFFB0BEC5); // slightly darker for subtle gradient
+  static const _hole   = Color(0xFFFFFFFF); // white = shows background
 
   TableComponent({
     required this.tableWidth,
@@ -70,7 +69,6 @@ class TableComponent extends BodyComponent {
 
   void _drawPockets(Canvas canvas) {
     for (final pos in pocketPositions) {
-      // Plain white circle — shows the white page background through the gray felt
       canvas.drawCircle(Offset(pos.x, pos.y), pocketRadius, Paint()..color = _hole);
     }
   }

@@ -1,7 +1,7 @@
-import 'dart:math' show atan2, cos, pi, sin;
+import 'dart:math' show cos, sin;
 import 'dart:ui';
 import 'package:flame_forge2d/flame_forge2d.dart';
-import 'package:flutter/material.dart' show Color, Colors;
+import 'package:flutter/material.dart' show Color;
 import '../pool_game.dart';
 import 'ball_component.dart';
 import 'table_component.dart';
@@ -37,26 +37,31 @@ class AimOverlay extends BodyComponent {
     final targetPos  = target.body.position;
     final pockets    = game.pocketPositions;
 
-    final nearestPocket = _nearestPocket(pockets, targetPos);
-    final pocketDir     = (nearestPocket - targetPos).normalized();
-    final ghostBall     = targetPos - pocketDir * (BallComponent.radius * 2);
+    // Use player-selected pocket, or auto-nearest as fallback.
+    final selectedIdx = game.selectedPocketNotifier.value;
+    final resolvedPocket = selectedIdx != null
+        ? pockets[selectedIdx]
+        : _nearestPocket(pockets, targetPos);
+    final pocketDir = (resolvedPocket - targetPos).normalized();
+    final ghostBall = targetPos - pocketDir * (BallComponent.radius * 2);
 
-    // ── 1. Aim line: cue ball → ghost ball ────────────────────────────────
+    // ── 1. All pockets as tap targets ─────────────────────────────────────
+    _drawPocketTargets(canvas, pockets, resolvedPocket);
+
+    // ── 2. Aim line: cue ball → ghost ball ────────────────────────────────
     _drawDashed(canvas, cueBallPos, ghostBall,
         Paint()..color = const Color(0x88444444)..strokeWidth = 0.04);
 
-    // ── 2. Ghost ball ─────────────────────────────────────────────────────
+    // ── 3. Ghost ball ─────────────────────────────────────────────────────
     _drawGhostBall(canvas, ghostBall);
 
-    // ── 3. Object → pocket line ───────────────────────────────────────────
-    _drawObjectLine(canvas, targetPos, nearestPocket);
-
-    // ── 4. Pocket zone ────────────────────────────────────────────────────
-    _drawPocketZone(canvas, nearestPocket);
+    // ── 4. Object → pocket line ───────────────────────────────────────────
+    _drawObjectLine(canvas, targetPos, resolvedPocket);
 
     // ── 5. Predicted cue ball path (90°-rule + spin) ──────────────────────
     final predicted = game.predictedCueBallPath(3.5);
     _drawDeflectionPath(canvas, ghostBall, predicted);
+
 
     // ── 6. Good zone for next ball ────────────────────────────────────────
     final next = game.nextTarget;
@@ -128,16 +133,22 @@ class AimOverlay extends BodyComponent {
     canvas.drawPath(p, paint);
   }
 
-  void _drawPocketZone(Canvas canvas, Vector2 pocket) {
-    canvas.drawCircle(Offset(pocket.x, pocket.y),
-        TableComponent.pocketRadius * 1.7,
-        Paint()..color = const Color(0x2222CC55));
-    canvas.drawCircle(Offset(pocket.x, pocket.y),
-        TableComponent.pocketRadius * 1.7,
-        Paint()
-          ..color = const Color(0x7722CC55)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.06);
+  /// Draws all 6 pockets as tap-selectable circles.
+  /// The active (resolved) pocket gets a green ring; others are dim gray rings.
+  void _drawPocketTargets(Canvas canvas, List<Vector2> pockets, Vector2 active) {
+    const r = TableComponent.pocketRadius * 1.6;
+    for (final p in pockets) {
+      final isActive = (p - active).length < 0.01;
+      // Fill
+      canvas.drawCircle(Offset(p.x, p.y), r,
+          Paint()..color = isActive ? const Color(0x3322CC55) : const Color(0x11444444));
+      // Ring
+      canvas.drawCircle(Offset(p.x, p.y), r,
+          Paint()
+            ..color = isActive ? const Color(0xCC22CC55) : const Color(0x44888888)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = isActive ? 0.08 : 0.04);
+    }
   }
 
   void _drawDeflectionPath(Canvas canvas, Vector2 fromPos, Vector2 toPos) {

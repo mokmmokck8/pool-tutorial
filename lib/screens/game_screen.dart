@@ -27,6 +27,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _shoot() {
+    if (!_game.isCurrentShotPossible) return;
     _game.hitPointNotifier.value = _hitPoint;
     _game.shoot(hitPoint: _hitPoint, power: _power);
   }
@@ -85,11 +86,6 @@ class _GameScreenState extends State<GameScreen> {
         // Ball sequence
         Expanded(child: _buildSequenceBar()),
         const SizedBox(width: 12),
-        // State chip
-        ListenableBuilder(
-          listenable: _game.stateNotifier,
-          builder: (_, __) => _StateChip(state: _game.stateNotifier.value),
-        ),
       ]),
     );
   }
@@ -126,11 +122,30 @@ class _GameScreenState extends State<GameScreen> {
       builder: (_, __) {
         final cleared = _game.stateNotifier.value == GameState.cleared;
         return Stack(children: [
-          GameWidget(game: _game),
+          GestureDetector(
+            onTapUp: (d) => _onTableTap(d.localPosition),
+            child: GameWidget(game: _game),
+          ),
           if (cleared) _buildClearedOverlay(),
         ]);
       },
     );
+  }
+
+  void _onTableTap(Offset localPos) {
+    if (_game.stateNotifier.value != GameState.aiming) return;
+    final worldPos = _game.tapToWorld(localPos.dx, localPos.dy);
+    final pockets = _game.pocketPositions;
+    int? bestIdx;
+    double bestDist = 2.5; // world units tap radius
+    for (int i = 0; i < pockets.length; i++) {
+      final d = (pockets[i] - worldPos).length;
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx != null) {
+      _game.selectPocket(bestIdx);
+      setState(() {});
+    }
   }
 
   Widget _buildClearedOverlay() {
@@ -212,29 +227,50 @@ class _GameScreenState extends State<GameScreen> {
             ListenableBuilder(
               listenable: _game.stateNotifier,
               builder: (_, __) {
-                final canShoot = _game.stateNotifier.value == GameState.aiming ||
-                    _game.stateNotifier.value == GameState.idle;
+                final state = _game.stateNotifier.value;
+                final isAiming = state == GameState.aiming || state == GameState.idle;
+                final shotOk = isAiming && _game.isCurrentShotPossible;
+                // Impossible shot: show undo prompt instead of shoot button
+                if (isAiming && !_game.isCurrentShotPossible) {
+                  return Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('切角太大', style: TextStyle(
+                        fontSize: 11, color: Color(0xFFE74C3C), fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: () { _game.undo(); setState(() {}); },
+                      child: Container(
+                        width: 66, height: 66,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFFE74C3C).withValues(alpha: 0.12),
+                          border: Border.all(color: const Color(0xFFE74C3C), width: 2),
+                        ),
+                        child: const Icon(Icons.undo_rounded, color: Color(0xFFE74C3C), size: 26),
+                      ),
+                    ),
+                  ]);
+                }
                 return GestureDetector(
-                  onTap: canShoot ? _shoot : null,
+                  onTap: shotOk ? _shoot : null,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: 66, height: 66,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: canShoot
+                      gradient: shotOk
                           ? const LinearGradient(
                               colors: [Color(0xFF2ECC71), Color(0xFF27AE60)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight)
                           : null,
-                      color: canShoot ? null : Colors.black12,
-                      boxShadow: canShoot
-                          ? [BoxShadow(color: const Color(0xFF2ECC71).withOpacity(0.35),
+                      color: shotOk ? null : Colors.black12,
+                      boxShadow: shotOk
+                          ? [BoxShadow(color: const Color(0xFF2ECC71).withValues(alpha: 0.35),
                                 blurRadius: 16, spreadRadius: 2)]
                           : null,
                     ),
                     child: Icon(Icons.sports_cricket_rounded,
-                        color: canShoot ? Colors.white : Colors.black26, size: 26),
+                        color: shotOk ? Colors.white : Colors.black26, size: 26),
                   ),
                 );
               },
@@ -309,36 +345,3 @@ class _ArrowChip extends StatelessWidget {
   );
 }
 
-class _StateChip extends StatelessWidget {
-  final GameState state;
-  const _StateChip({required this.state});
-
-  String get label => switch (state) {
-    GameState.aiming  => 'Aim',
-    GameState.rolling => 'Rolling…',
-    GameState.scored  => 'Scored!',
-    GameState.scratch => 'Scratch!',
-    GameState.cleared => 'Cleared!',
-    GameState.idle    => 'Ready',
-  };
-
-  Color get color => switch (state) {
-    GameState.scored  => const Color(0xFF27AE60),
-    GameState.scratch => const Color(0xFFE74C3C),
-    GameState.rolling => const Color(0xFFF39C12),
-    GameState.cleared => const Color(0xFF27AE60),
-    _                 => Colors.black45,
-  };
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(16),
-      color: color.withOpacity(0.1),
-      border: Border.all(color: color.withOpacity(0.3)),
-    ),
-    child: Text(label,
-        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-  );
-}

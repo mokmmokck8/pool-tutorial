@@ -21,21 +21,32 @@ class BallComponent extends BodyComponent {
     this.isCue = false,
   }) : startPosition = position.clone();
 
+  // ── Tunable physics constants ─────────────────────────────────────────────
+  /// Felt rolling resistance.  ↑ = ball stops sooner.  Range: 1.5–3.0
+  static const double kLinearDamping  = 2.0;
+  /// Spin decay rate.  ↓ = spin persists longer (better English/rail effect).  Range: 0.8–2.5
+  static const double kAngularDamping = 1.4;
+  /// Ball-to-ball elasticity.  ↑ = more energy kept on collision.  Range: 0.85–0.97
+  static const double kRestitution    = 0.92;
+  /// Ball surface friction.  Keep very low so ball-ball collisions follow the
+  /// clean 90-degree rule (no tangential force bleed).  Range: 0.0–0.08
+  static const double kFriction       = 0.02;
+
   @override
   Body createBody() {
     final bodyDef = BodyDef()
-      ..type         = BodyType.dynamic
-      ..position     = startPosition
-      ..linearDamping  = 1.3
-      ..angularDamping = 2.2
-      ..bullet       = true;
+      ..type           = BodyType.dynamic
+      ..position       = startPosition
+      ..linearDamping  = kLinearDamping
+      ..angularDamping = kAngularDamping
+      ..bullet         = true;
 
     final shape = CircleShape()..radius = radius;
     return world.createBody(bodyDef)
       ..createFixture(FixtureDef(shape)
         ..density     = 1.0
-        ..friction    = 0.3
-        ..restitution = 0.75);
+        ..friction    = kFriction
+        ..restitution = kRestitution);
   }
 
   void pocket() {
