@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flame/game.dart';
 import '../game/lab/lab_game.dart';
 import '../widgets/power_slider.dart';
+import '../widgets/spin_slider.dart';
 
 class LabScreen extends StatefulWidget {
   const LabScreen({super.key});
@@ -12,6 +13,7 @@ class LabScreen extends StatefulWidget {
 class _LabScreenState extends State<LabScreen> {
   late LabGame _game;
   double _power    = 0.5;
+  double _spin     = 0.0;  // -1 back … 0 centre … +1 top
   double _cutAngle = 0;
 
   static const List<double> _angles = [0, 15, 20, 30, 45];
@@ -28,7 +30,7 @@ class _LabScreenState extends State<LabScreen> {
   }
 
   void _shoot() {
-    _game.shoot(power: _power);
+    _game.shoot(power: _power, spin: _spin);
   }
 
   void _reset() {
@@ -149,7 +151,33 @@ class _LabScreenState extends State<LabScreen> {
                 onChanged: (v) => setState(() => _power = v)),
           ]),
 
-          const SizedBox(width: 32),
+          const SizedBox(width: 20),
+
+          // Spin slider
+          Column(mainAxisSize: MainAxisSize.min, children: [
+            _label('SPIN'),
+            const SizedBox(height: 6),
+            SpinSlider(
+                value: _spin,
+                onChanged: (v) => setState(() => _spin = v)),
+            const SizedBox(height: 4),
+            // tiny top/btm labels
+            SizedBox(
+              width: SpinSlider.width,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _spinLabel('TOP', const Color(0xFFE74C3C), _spin > 0.05),
+                  const SizedBox(height: 2),
+                  _spinLabel('CTR', Colors.black38, _spin.abs() <= 0.05),
+                  const SizedBox(height: 2),
+                  _spinLabel('BTM', const Color(0xFF3498DB), _spin < -0.05),
+                ],
+              ),
+            ),
+          ]),
+
+          const SizedBox(width: 20),
 
           // Shoot / Reset toggle
           ListenableBuilder(
@@ -197,4 +225,14 @@ class _LabScreenState extends State<LabScreen> {
   Widget _label(String t) => Text(t,
       style: const TextStyle(fontSize: 10, letterSpacing: 2,
           color: Colors.black38, fontFamily: 'Courier New'));
+
+  Widget _spinLabel(String t, Color color, bool active) => Text(
+    t,
+    style: TextStyle(
+      fontSize: 8,
+      fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+      color: active ? color : Colors.black26,
+      fontFamily: 'Courier New',
+    ),
+  );
 }

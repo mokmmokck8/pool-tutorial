@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 /// Vertical power slider with color gradient (green → yellow → red).
-class PowerSlider extends StatelessWidget {
+/// Drag tracks finger position directly. Long-press activates fine-tune mode (5× slower).
+class PowerSlider extends StatefulWidget {
   final double value; // 0.0 to 1.0
   final ValueChanged<double> onChanged;
-  static const double _height = 100;
-  static const double _width = 28;
+  static const double height = 100;
+  static const double width = 28;
 
   const PowerSlider({
     super.key,
@@ -14,22 +15,76 @@ class PowerSlider extends StatelessWidget {
   });
 
   @override
+  State<PowerSlider> createState() => _PowerSliderState();
+}
+
+class _PowerSliderState extends State<PowerSlider> {
+  static const double _fineTuneFactor = 0.15;
+
+  bool _fineTune = false;
+  // The slider value at the moment fine-tune mode was activated
+  double _fineTuneBaseValue = 0.0;
+  // The finger Y at the moment fine-tune mode was activated
+  double _fineTuneBaseY = 0.0;
+  // Current finger Y (absolute within widget)
+  double _currentDragY = 0.0;
+
+  void _valueFromY(double localY) {
+    final v = 1.0 - (localY / PowerSlider.height).clamp(0.0, 1.0);
+    widget.onChanged(v);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      onVerticalDragStart: (d) {
+        _currentDragY = d.localPosition.dy;
+        if (!_fineTune) {
+          // Snap thumb to finger
+          _valueFromY(_currentDragY);
+        }
+      },
       onVerticalDragUpdate: (d) {
-        // drag up = more power
-        final delta = -d.delta.dy / _height;
-        onChanged((value + delta).clamp(0.0, 1.0));
+        _currentDragY = d.localPosition.dy;
+        if (_fineTune) {
+          // Fine-tune: move relative to where long-press was activated
+          final deltaY = _currentDragY - _fineTuneBaseY;
+          final delta = -deltaY / PowerSlider.height * _fineTuneFactor;
+          widget.onChanged((_fineTuneBaseValue + delta).clamp(0.0, 1.0));
+        } else {
+          _valueFromY(_currentDragY);
+        }
+      },
+      onVerticalDragEnd: (_) {
+        if (_fineTune) {
+          setState(() => _fineTune = false);
+        }
+      },
+      onLongPressStart: (d) {
+        setState(() {
+          _fineTune = true;
+          _fineTuneBaseValue = widget.value;
+          _fineTuneBaseY = d.localPosition.dy;
+          _currentDragY = d.localPosition.dy;
+        });
+      },
+      onLongPressMoveUpdate: (d) {
+        _currentDragY = d.localPosition.dy;
+        final deltaY = _currentDragY - _fineTuneBaseY;
+        final delta = -deltaY / PowerSlider.height * _fineTuneFactor;
+        widget.onChanged((_fineTuneBaseValue + delta).clamp(0.0, 1.0));
+      },
+      onLongPressEnd: (_) {
+        setState(() => _fineTune = false);
       },
       onTapDown: (d) {
-        final newVal = 1.0 - (d.localPosition.dy / _height).clamp(0.0, 1.0);
-        onChanged(newVal);
+        _valueFromY(d.localPosition.dy);
       },
       child: SizedBox(
-        width: _width,
-        height: _height,
+        width: PowerSlider.width,
+        height: PowerSlider.height,
         child: CustomPaint(
-          painter: _PowerPainter(value),
+          painter: _PowerPainter(widget.value, _fineTune),
         ),
       ),
     );
@@ -38,7 +93,8 @@ class PowerSlider extends StatelessWidget {
 
 class _PowerPainter extends CustomPainter {
   final double value;
-  _PowerPainter(this.value);
+  final bool fineTune;
+  _PowerPainter(this.value, this.fineTune);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -81,14 +137,21 @@ class _PowerPainter extends CustomPainter {
       canvas.drawLine(Offset(4, y), Offset(size.width - 4, y), notchPaint);
     }
 
-    // Thumb
+    // Thumb — larger + blue ring in fine-tune mode
     final thumbY = size.height - size.height * value;
-    final thumbPaint = Paint()..color = Colors.white;
+    final thumbRadius = fineTune ? 9.0 : 7.0;
+    if (fineTune) {
+      canvas.drawCircle(
+        Offset(size.width / 2, thumbY),
+        thumbRadius + 3,
+        Paint()..color = Colors.blueAccent.withOpacity(0.35),
+      );
+    }
     final thumbShadow = Paint()
       ..color = Colors.black26
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    canvas.drawCircle(Offset(size.width / 2, thumbY + 1), 7, thumbShadow);
-    canvas.drawCircle(Offset(size.width / 2, thumbY), 7, thumbPaint);
+    canvas.drawCircle(Offset(size.width / 2, thumbY + 1), thumbRadius, thumbShadow);
+    canvas.drawCircle(Offset(size.width / 2, thumbY), thumbRadius, Paint()..color = Colors.white);
 
     // Border
     canvas.drawRRect(
@@ -101,5 +164,5 @@ class _PowerPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PowerPainter old) => old.value != value;
+  bool shouldRepaint(_PowerPainter old) => old.value != value || old.fineTune != fineTune;
 }

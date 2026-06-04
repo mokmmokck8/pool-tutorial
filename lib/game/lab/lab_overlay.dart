@@ -19,8 +19,14 @@ class LabAimOverlay extends BodyComponent {
 
   @override
   void render(Canvas canvas) {
-    if (game.state != LabState.aiming) return;
     if (!game.isLoaded) return;
+
+    // Trail: visible while rolling and after the ball stops
+    if (game.state == LabState.rolling || game.state == LabState.done) {
+      _drawTrail(canvas, game.cueTrail);
+    }
+
+    if (game.state != LabState.aiming) return;
 
     final cueBallPos = game.cueBall.body.position;
     final targetPos = game.targetBall.body.position;
@@ -67,6 +73,23 @@ class LabAimOverlay extends BodyComponent {
                  tip.y - dir.y * arrLen * cos(ang) + dir.x * arrLen * sin(ang)),
       paint,
     );
+  }
+
+  void _drawTrail(Canvas canvas, List<Vector2> trail) {
+    if (trail.length < 2) return;
+    final dotPaint = Paint()..color = const Color(0xBBFFFFFF);
+    final shadowPaint = Paint()..color = const Color(0x44000000);
+    const dotR = 0.055;
+    for (int i = 0; i < trail.length; i++) {
+      // Fade out older points (head = oldest, tail = newest)
+      final t = i / (trail.length - 1);
+      final alpha = (80 + (t * 175)).round().clamp(0, 255);
+      dotPaint.color = Color.fromARGB(alpha, 255, 255, 255);
+      shadowPaint.color = Color.fromARGB((alpha * 0.35).round(), 0, 0, 0);
+      final p = Offset(trail[i].x, trail[i].y);
+      canvas.drawCircle(p, dotR + 0.01, shadowPaint);
+      canvas.drawCircle(p, dotR, dotPaint);
+    }
   }
 
   void _drawDashed(Canvas canvas, Vector2 from, Vector2 to, Paint paint,

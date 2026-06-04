@@ -12,27 +12,54 @@ class LabTablePhysics {
   static const double _cornerGap = 1.0;
   static const double _midGap = 0.9;
 
+  // Thickness of the invisible wall slab (extends outside the table).
+  // Must be >> ball-radius so CCD always finds it even at max speed.
+  static const double _wallThick = 10.0;
+
   static void buildWalls(Forge2DWorld world) {
     final hh = tableH / 2;
-    final segs = <List<Vector2>>[
-      [Vector2(rail + _cornerGap, rail), Vector2(tableW - rail - _cornerGap, rail), Vector2(0, rail), Vector2(tableW, rail)],
-      [Vector2(rail + _cornerGap, tableH - rail), Vector2(tableW - rail - _cornerGap, tableH - rail), Vector2(0, tableH - rail), Vector2(tableW, tableH - rail)],
-      [Vector2(rail, rail + _cornerGap), Vector2(rail, hh - _midGap), Vector2(rail, 0), Vector2(rail, hh)],
-      [Vector2(rail, hh + _midGap), Vector2(rail, tableH - rail - _cornerGap), Vector2(rail, hh), Vector2(rail, tableH)],
-      [Vector2(tableW - rail, rail + _cornerGap), Vector2(tableW - rail, hh - _midGap), Vector2(tableW - rail, 0), Vector2(tableW - rail, hh)],
-      [Vector2(tableW - rail, hh + _midGap), Vector2(tableW - rail, tableH - rail - _cornerGap), Vector2(tableW - rail, hh), Vector2(tableW - rail, tableH)],
-    ];
-    for (final seg in segs) {
-      final shape = EdgeShape()
-        ..set(seg[0], seg[1])
-        ..vertex0.setFrom(seg[2])
-        ..hasVertex0 = true
-        ..vertex3.setFrom(seg[3])
-        ..hasVertex3 = true;
-      final bd = BodyDef()..type = BodyType.static;
+
+    // Each wall is a solid PolygonShape slab.  The inner face sits exactly at
+    // the table edge (0 / tableW / tableH); the outer face goes _wallThick
+    // units outside, giving CCD a large surface to intercept fast balls.
+    //
+    // Each entry: [x, y, halfWidth, halfHeight, centerX, centerY]
+    // We build each segment as its own body positioned at the slab's centre.
+    //
+    // Horizontal slabs (top / bottom) ──────────────────────────────────────
+    //   full width minus corner gaps, thickness in Y
+    // Vertical slabs (left / right, split at mid-pocket) ───────────────────
+    //   thickness in X, height from corner gap to mid-gap
+
+    void addSlab(double cx, double cy, double hw, double hh2) {
+      final shape = PolygonShape()..setAsBoxXY(hw, hh2);
+      final bd = BodyDef()..type = BodyType.static..position = Vector2(cx, cy);
       world.createBody(bd).createFixture(
-          FixtureDef(shape)..friction = 1.0..restitution = 0.60);
+          FixtureDef(shape)..friction = 0.4..restitution = 0.60);
     }
+
+    final t = _wallThick;
+
+    // ── Top rail (inner face at y=0, slab extends upward) ─────────────────
+    final topW = (tableW - 2 * _cornerGap) / 2;
+    addSlab(tableW / 2, -t / 2, topW, t / 2);
+
+    // ── Bottom rail (inner face at y=tableH, slab extends downward) ───────
+    addSlab(tableW / 2, tableH + t / 2, topW, t / 2);
+
+    // ── Left rail — top half (inner face at x=0, slab extends left) ───────
+    final leftTopH = (hh - _midGap - _cornerGap) / 2;
+    addSlab(-t / 2, _cornerGap + leftTopH, t / 2, leftTopH);
+
+    // ── Left rail — bottom half ────────────────────────────────────────────
+    final leftBotH = (tableH - _cornerGap - (hh + _midGap)) / 2;
+    addSlab(-t / 2, hh + _midGap + leftBotH, t / 2, leftBotH);
+
+    // ── Right rail — top half ──────────────────────────────────────────────
+    addSlab(tableW + t / 2, _cornerGap + leftTopH, t / 2, leftTopH);
+
+    // ── Right rail — bottom half ───────────────────────────────────────────
+    addSlab(tableW + t / 2, hh + _midGap + leftBotH, t / 2, leftBotH);
   }
 
   static void buildPocketSensors(Forge2DWorld world, List<Vector2> positions) {
