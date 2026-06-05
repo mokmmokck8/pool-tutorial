@@ -50,7 +50,7 @@ class LabGame extends Forge2DGame {
   // ── 跟進（Follow）效果 ────────────────────────────────────────────────────
   /// 力道超過此閾值時，母球不再跟進（純定桿）。
   /// 減小 → 更難觸發跟進；增大 → 高力道也有跟進效果。
-  static const double kFollowThreshold = 0.65;
+  static const double kFollowThreshold = 1.5;
 
   /// 跟進效果最大前進速度比例（0 = 完全不跟進，1 = 全速跟進）。
   /// 增大 → 跟進路徑更長；減小 → 跟進路徑更短。
@@ -76,7 +76,7 @@ class LabGame extends Forge2DGame {
   /// 大力撞庫時切向速度（沿庫邊方向）最多被吸收的比例。
   /// softness = 0 時不吸收（完全硬庫）；softness = 1 時以最大比例吸收。
   /// 吸收量隨法向衝擊速度線性增加，模擬「越大力打庫，反射角越小」的真實感。
-  static const double kCushionMaxAngleReduction = 0.03;
+  static const double kCushionMaxAngleReduction = 0;
 
   /// 達到最大吸收效果的參考撞庫法向速度（物理單位 / 秒）。
   /// 法向速度超過此值後吸收量不再增加（clamp 至 1.0）。
@@ -112,29 +112,29 @@ class LabGame extends Forge2DGame {
   // ── Table geometry ────────────────────────────────────────────────────────
   static const double tableW = LabTablePhysics.tableW;
   static const double tableH = LabTablePhysics.tableH;
-  static const double rail   = LabTablePhysics.rail;
+  static const double rail = LabTablePhysics.rail;
 
   // Fixed layout: target ball in centre, pocket at bottom-right corner
   static Vector2 get targetPocket => Vector2(tableW, tableH);
-  static Vector2 get _targetPos   => Vector2(tableW * 0.50, tableH * 0.50);
+  static Vector2 get _targetPos => Vector2(tableW * 0.50, tableH * 0.50);
   double _cueDist = 6.0;
 
   final List<Vector2> _pocketPositions = [];
   final Map<BallComponent, Vector2> _prevPositions = {};
 
   // ── Shot state ────────────────────────────────────────────────────────────
-  bool _gameLoaded        = false;
-  bool _ballsMoving       = false;
-  bool _ballsContacting   = false;
+  bool _gameLoaded = false;
+  bool _ballsMoving = false;
+  bool _ballsContacting = false;
   bool _firstCollisionDone = false;
-  double _lastPower       = 0.5;
-  double _lastSpin        = 0.0;
-  double _lastSideSpin    = 0.0;
+  double _lastPower = 0.5;
+  double _lastSpin = 0.0;
+  double _lastSideSpin = 0.0;
   double _currentSideSpin = 0.0;
-  double _lastCutAngle    = 0.0;
-  Vector2 _prevCueVel     = Vector2.zero();
-  Vector2 _prevTargetVel  = Vector2.zero();
-  Vector2 _shotDir        = Vector2(1, 0);
+  double _lastCutAngle = 0.0;
+  Vector2 _prevCueVel = Vector2.zero();
+  Vector2 _prevTargetVel = Vector2.zero();
+  Vector2 _shotDir = Vector2(1, 0);
 
   // ── Cue ball trail ────────────────────────────────────────────────────────
   final List<Vector2> cueTrail = [];
@@ -151,8 +151,7 @@ class LabGame extends Forge2DGame {
     super.onGameResize(size);
     if (size.x <= 0 || size.y <= 0) return;
     const pad = 1.08;
-    camera.viewfinder.zoom =
-        min(size.x / (tableW * pad), size.y / (tableH * pad));
+    camera.viewfinder.zoom = min(size.x / (tableW * pad), size.y / (tableH * pad));
     camera.viewfinder.position = Vector2(tableW / 2, tableH / 2);
   }
 
@@ -208,7 +207,7 @@ class LabGame extends Forge2DGame {
 
   // ── Public API ────────────────────────────────────────────────────────────
   LabState get state => stateNotifier.value;
-  bool get isLoaded  => _gameLoaded;
+  bool get isLoaded => _gameLoaded;
 
   /// Reposition cue ball for the given cut angle and reset both balls.
   void setCutAngle(double degrees) {
@@ -221,16 +220,16 @@ class LabGame extends Forge2DGame {
       if (ball.body.bodyType != BodyType.dynamic) {
         ball.body.setType(BodyType.dynamic);
       }
-      ball.body.linearVelocity  = Vector2.zero();
+      ball.body.linearVelocity = Vector2.zero();
       ball.body.angularVelocity = 0;
       ball.inPlay = true;
     }
     cueBall.body.setTransform(newPos, 0);
     targetBall.body.setTransform(_targetPos, 0);
 
-    _ballsContacting    = false;
+    _ballsContacting = false;
     _firstCollisionDone = false;
-    _ballsMoving        = false;
+    _ballsMoving = false;
     cueTrail.clear();
     stateNotifier.value = LabState.aiming;
   }
@@ -242,14 +241,14 @@ class LabGame extends Forge2DGame {
 
   void shoot({required double power, double spin = 0.0, double sideSpin = 0.0}) {
     if (stateNotifier.value != LabState.aiming) return;
-    _lastPower      = power;
-    _lastSpin       = spin.clamp(-1.0, 1.0);
-    _lastSideSpin   = sideSpin.clamp(-1.0, 1.0);
+    _lastPower = power;
+    _lastSpin = spin.clamp(-1.0, 1.0);
+    _lastSideSpin = sideSpin.clamp(-1.0, 1.0);
     _currentSideSpin = _lastSideSpin;
-    _ballsContacting    = false;
+    _ballsContacting = false;
     _firstCollisionDone = false;
-    _spinRemaining      = 0.0;
-    _preCollisionSpin   = _lastSpin;
+    _spinRemaining = 0.0;
+    _preCollisionSpin = _lastSpin;
     cueTrail.clear();
 
     final angle = _autoAimAngle;
@@ -263,7 +262,7 @@ class LabGame extends Forge2DGame {
   // ── Geometry helpers ──────────────────────────────────────────────────────
   double get _autoAimAngle {
     final ghost = _ghostBall(targetBall.body.position, targetPocket);
-    final diff  = ghost - cueBall.body.position;
+    final diff = ghost - cueBall.body.position;
     return atan2(diff.y, diff.x);
   }
 
@@ -291,9 +290,9 @@ class LabGame extends Forge2DGame {
   // ── Update loop ───────────────────────────────────────────────────────────
   @override
   void update(double dt) {
-    if (cueBall.isLoaded)    _prevPositions[cueBall]    = cueBall.body.position.clone();
+    if (cueBall.isLoaded) _prevPositions[cueBall] = cueBall.body.position.clone();
     if (targetBall.isLoaded) _prevPositions[targetBall] = targetBall.body.position.clone();
-    _prevCueVel    = cueBall.isLoaded    ? cueBall.body.linearVelocity.clone()    : Vector2.zero();
+    _prevCueVel = cueBall.isLoaded ? cueBall.body.linearVelocity.clone() : Vector2.zero();
     _prevTargetVel = targetBall.isLoaded ? targetBall.body.linearVelocity.clone() : Vector2.zero();
 
     super.update(dt);
@@ -313,8 +312,7 @@ class LabGame extends Forge2DGame {
     if (stateNotifier.value != LabState.rolling) return;
     if (!cueBall.isLoaded || !cueBall.inPlay) return;
     final pos = cueBall.body.position.clone();
-    if (cueTrail.isEmpty ||
-        (pos - cueTrail.last).length >= kTrailSampleDist) {
+    if (cueTrail.isEmpty || (pos - cueTrail.last).length >= kTrailSampleDist) {
       cueTrail.add(pos);
     }
   }
@@ -325,12 +323,12 @@ class LabGame extends Forge2DGame {
     if (!cueBall.isLoaded || !cueBall.inPlay) return;
     if (!targetBall.isLoaded || !targetBall.inPlay) return;
 
-    const collR    = BallComponent.radius * 2.0;
+    const collR = BallComponent.radius * 2.0;
     const separateR = collR + 0.06; // small hysteresis so we don't re-fire immediately
 
-    final cuePos    = cueBall.body.position;
+    final cuePos = cueBall.body.position;
     final targetPos = targetBall.body.position;
-    final dist      = (cuePos - targetPos).length;
+    final dist = (cuePos - targetPos).length;
 
     // Once balls have separated, allow the next collision
     if (_ballsContacting && dist > separateR) {
@@ -349,7 +347,7 @@ class LabGame extends Forge2DGame {
     final normal = (targetPos - contactPt).normalized();
 
     // Use pre-step velocities to avoid using already-modified values
-    final vCue    = _prevCueVel.clone();
+    final vCue = _prevCueVel.clone();
     final vTarget = _prevTargetVel.clone();
 
     // Relative velocity along normal — must be approaching
@@ -366,21 +364,20 @@ class LabGame extends Forge2DGame {
 
     // ── Elastic collision (equal mass) ────────────────────────────────────
     // Standard 1D elastic along normal; tangential components unchanged.
-    final cueNorm    = vCue.dot(normal);
+    final cueNorm = vCue.dot(normal);
     final targetNorm = vTarget.dot(normal);
-    final cueTang    = vCue    - normal * cueNorm;
+    final cueTang = vCue - normal * cueNorm;
     final targetTang = vTarget - normal * targetNorm;
 
     // Exchange normal components (equal mass → perfect swap)
-    Vector2 newCueVel    = cueTang    + normal * targetNorm;
+    Vector2 newCueVel = cueTang + normal * targetNorm;
     Vector2 newTargetVel = targetTang + normal * cueNorm;
 
     // ── First-hit only: apply follow/draw on top of elastic result ────────
     if (!_firstCollisionDone) {
       _firstCollisionDone = true;
       // followFraction: 0 at high power (stun), 1 at low power (follow)
-      final followFraction =
-          (1.0 - _lastPower / kFollowThreshold).clamp(0.0, 1.0);
+      final followFraction = (1.0 - _lastPower / kFollowThreshold).clamp(0.0, 1.0);
       // Override cue velocity: tangent + partial forward follow
       newCueVel = cueTang + normal * (cueNorm * followFraction * kFollowScale);
 
@@ -396,13 +393,13 @@ class LabGame extends Forge2DGame {
     // At 0° cut the cue ball has no tangential velocity → no lateral effect.
     // At larger cut angles cueTang grows → side spin redirects the cue ball.
     if (_currentSideSpin.abs() > 0.01) {
-      final tang      = Vector2(-normal.y, normal.x);
-      final tangSpeed = cueTang.length;           // 0 at straight shot, grows with cut angle
-      final deflV     = _currentSideSpin * kSideSpinThrowFraction * tangSpeed;
-      newCueVel      += tang * deflV;
+      final tang = Vector2(-normal.y, normal.x);
+      final tangSpeed = cueTang.length; // 0 at straight shot, grows with cut angle
+      final deflV = _currentSideSpin * kSideSpinThrowFraction * tangSpeed;
+      newCueVel += tang * deflV;
     }
 
-    cueBall.body.linearVelocity    = newCueVel;
+    cueBall.body.linearVelocity = newCueVel;
     targetBall.body.linearVelocity = newTargetVel;
 
     // Spin loses energy on contact with another ball
@@ -414,9 +411,9 @@ class LabGame extends Forge2DGame {
   /// Reduce both spin states by [fraction] (0 = no change, 1 = zeroed out).
   void _decaySpin(double fraction) {
     final keep = 1.0 - fraction;
-    _preCollisionSpin  *= keep;
-    _spinRemaining     *= keep;
-    _currentSideSpin   *= keep;
+    _preCollisionSpin *= keep;
+    _spinRemaining *= keep;
+    _currentSideSpin *= keep;
   }
 
   /// Detect a rail bounce by comparing the cue ball's velocity sign before and
@@ -495,8 +492,7 @@ class LabGame extends Forge2DGame {
 
       // Manually bleed off kinetic energy — Box2D max(restitution) mixing
       // means the wall's lower restitution has no effect when the ball's is higher.
-      cueBall.body.linearVelocity =
-          cueBall.body.linearVelocity * kRailVelocityKeep;
+      cueBall.body.linearVelocity = cueBall.body.linearVelocity * kRailVelocityKeep;
     }
   }
 
@@ -576,9 +572,9 @@ class LabGame extends Forge2DGame {
 
     final totalDuration = _preCollisionSpin.abs() * kSpinMaxDuration;
     // Linear fade: full force at start, zero at end
-    final fade      = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
-    final spinDir   = _lastSpin > 0 ? _shotDir : -_shotDir;
-    final forceMag  = _preCollisionSpin.abs() * kSpinForce * fade;
+    final fade = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
+    final spinDir = _lastSpin > 0 ? _shotDir : -_shotDir;
+    final forceMag = _preCollisionSpin.abs() * kSpinForce * fade;
 
     cueBall.body.applyForce(spinDir * forceMag);
     _spinRemaining = (_spinRemaining - dt).clamp(0.0, double.infinity);
@@ -592,8 +588,7 @@ class LabGame extends Forge2DGame {
     bool inPocket(BallComponent ball) {
       final curr = ball.body.position;
       final prev = _prevPositions[ball] ?? curr;
-      return _pocketPositions.any(
-          (p) => LabTablePhysics.segmentHitsCircle(prev, curr, p, detectR));
+      return _pocketPositions.any((p) => LabTablePhysics.segmentHitsCircle(prev, curr, p, detectR));
     }
 
     for (final ball in [cueBall, targetBall]) {
@@ -608,7 +603,7 @@ class LabGame extends Forge2DGame {
   // Pocketed balls are moved off-screen intentionally — skip those.
   //
   void _clampBallsInBounds() {
-    const r    = BallComponent.radius;
+    const r = BallComponent.radius;
     const minX = r;
     const maxX = tableW - r;
     const minY = r;
@@ -623,10 +618,26 @@ class LabGame extends Forge2DGame {
       double vx = vel.x, vy = vel.y;
       bool clamped = false;
 
-      if (pos.x < minX) { nx = minX; vx =  vx.abs(); clamped = true; }
-      if (pos.x > maxX) { nx = maxX; vx = -vx.abs(); clamped = true; }
-      if (pos.y < minY) { ny = minY; vy =  vy.abs(); clamped = true; }
-      if (pos.y > maxY) { ny = maxY; vy = -vy.abs(); clamped = true; }
+      if (pos.x < minX) {
+        nx = minX;
+        vx = vx.abs();
+        clamped = true;
+      }
+      if (pos.x > maxX) {
+        nx = maxX;
+        vx = -vx.abs();
+        clamped = true;
+      }
+      if (pos.y < minY) {
+        ny = minY;
+        vy = vy.abs();
+        clamped = true;
+      }
+      if (pos.y > maxY) {
+        ny = maxY;
+        vy = -vy.abs();
+        clamped = true;
+      }
 
       if (clamped) {
         ball.body.setTransform(Vector2(nx, ny), ball.body.angle);
@@ -636,8 +647,7 @@ class LabGame extends Forge2DGame {
   }
 
   // ── Motion state tracking ─────────────────────────────────────────────────
-  bool get _anyMoving => [cueBall, targetBall]
-      .any((b) => b.inPlay && b.body.linearVelocity.length2 > 0.01);
+  bool get _anyMoving => [cueBall, targetBall].any((b) => b.inPlay && b.body.linearVelocity.length2 > 0.01);
 
   void _trackMotionState() {
     final moving = _anyMoving;

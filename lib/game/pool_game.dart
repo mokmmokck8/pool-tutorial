@@ -90,6 +90,17 @@ class PoolGame extends Forge2DGame {
   /// Per-frame energy decay multiplier. Closer to 1.0 = longer-lasting effect.
   double _spinDyDecay = 0.93;
 
+  /// Left/right English energy stored at shoot time; decays each frame during travel.
+  /// Positive = right English → curves right.
+  /// Negative = left English → curves left.
+  double _spinDxEnergy = 0.0;
+
+  /// Per-frame decay for English curve effect.
+  double _spinDxDecay = 0.93;
+
+  /// Original hitPoint.dx stored at shoot time; used for fixed-angle rail English.
+  double _shootDx = 0.0;
+
   /// Previous-frame positions for continuous pocket detection.
   final Map<BallComponent, Vector2> _prevPositions = {};
 
@@ -152,8 +163,7 @@ class PoolGame extends Forge2DGame {
     aimOverlay = AimOverlay(game: this);
     await world.add(aimOverlay);
 
-    _gameLoaded =
-        true; // guard: prevents isCurrentShotPossible firing before load
+    _gameLoaded = true; // guard: prevents isCurrentShotPossible firing before load
   }
 
   // ── Physics setup ──────────────────────────────────────────────────────────
@@ -165,47 +175,17 @@ class PoolGame extends Forge2DGame {
     // preventing spurious bounce-back when a ball rolls through a pocket gap.
     final segs = <List<Vector2>>[
       // Top short wall
-      [
-        Vector2(rail + _cornerGap, rail),
-        Vector2(tableW - rail - _cornerGap, rail),
-        Vector2(0, rail),
-        Vector2(tableW, rail)
-      ],
+      [Vector2(rail + _cornerGap, rail), Vector2(tableW - rail - _cornerGap, rail), Vector2(0, rail), Vector2(tableW, rail)],
       // Bottom short wall
-      [
-        Vector2(rail + _cornerGap, tableH - rail),
-        Vector2(tableW - rail - _cornerGap, tableH - rail),
-        Vector2(0, tableH - rail),
-        Vector2(tableW, tableH - rail)
-      ],
+      [Vector2(rail + _cornerGap, tableH - rail), Vector2(tableW - rail - _cornerGap, tableH - rail), Vector2(0, tableH - rail), Vector2(tableW, tableH - rail)],
       // Left wall — upper half
-      [
-        Vector2(rail, rail + _cornerGap),
-        Vector2(rail, hh - _midGap),
-        Vector2(rail, 0),
-        Vector2(rail, hh)
-      ],
+      [Vector2(rail, rail + _cornerGap), Vector2(rail, hh - _midGap), Vector2(rail, 0), Vector2(rail, hh)],
       // Left wall — lower half
-      [
-        Vector2(rail, hh + _midGap),
-        Vector2(rail, tableH - rail - _cornerGap),
-        Vector2(rail, hh),
-        Vector2(rail, tableH)
-      ],
+      [Vector2(rail, hh + _midGap), Vector2(rail, tableH - rail - _cornerGap), Vector2(rail, hh), Vector2(rail, tableH)],
       // Right wall — upper half
-      [
-        Vector2(tableW - rail, rail + _cornerGap),
-        Vector2(tableW - rail, hh - _midGap),
-        Vector2(tableW - rail, 0),
-        Vector2(tableW - rail, hh)
-      ],
+      [Vector2(tableW - rail, rail + _cornerGap), Vector2(tableW - rail, hh - _midGap), Vector2(tableW - rail, 0), Vector2(tableW - rail, hh)],
       // Right wall — lower half
-      [
-        Vector2(tableW - rail, hh + _midGap),
-        Vector2(tableW - rail, tableH - rail - _cornerGap),
-        Vector2(tableW - rail, hh),
-        Vector2(tableW - rail, tableH)
-      ],
+      [Vector2(tableW - rail, hh + _midGap), Vector2(tableW - rail, tableH - rail - _cornerGap), Vector2(tableW - rail, hh), Vector2(tableW - rail, tableH)],
     ];
 
     for (final seg in segs) {
@@ -230,8 +210,7 @@ class PoolGame extends Forge2DGame {
       final bd = BodyDef()
         ..type = BodyType.static
         ..position = pos;
-      world.createBody(bd).createFixture(
-          FixtureDef(CircleShape()..radius = pocketR)..isSensor = true);
+      world.createBody(bd).createFixture(FixtureDef(CircleShape()..radius = pocketR)..isSensor = true);
     }
   }
 
@@ -385,8 +364,7 @@ class PoolGame extends Forge2DGame {
   // ── Shoot ──────────────────────────────────────────────────────────────────
   void shoot({required Offset hitPoint, required double power}) {
     if (stateNotifier.value == GameState.rolling) return;
-    if (!isCurrentShotPossible)
-      return; // guard: UI should hide button, but safety-net here
+    if (!isCurrentShotPossible) return; // guard: UI should hide button, but safety-net here
     hitPointNotifier.value = hitPoint;
     _saveSnapshot();
 
@@ -401,19 +379,23 @@ class PoolGame extends Forge2DGame {
     // kMaxForce: peak linear impulse at full power.  ↑ = harder max shot.  Range: 50–120
     // kVisualSpin: angular impulse for visual ball roll (cosmetic only).   Range: 1.0–4.0
     // Power is squared so low-power shots feel noticeably slower/shorter.
-    const kMaxForce = 80.0;
+    const kMaxForce = 55.0;
     const kVisualSpin = 1.5;
     final effectivePower = power * power; // quadratic: 50% power → 25% force
     cueBall.body.applyLinearImpulse(_shotDir * (effectivePower * kMaxForce));
     // Left/right English → angular velocity (visual rolling + rail spin transfer).
-    cueBall.body
-        .applyAngularImpulse(hitPoint.dx * effectivePower * kVisualSpin);
+    cueBall.body.applyAngularImpulse(hitPoint.dx * effectivePower * kVisualSpin);
 
     // Top/back spin energy for post-contact acceleration.
     // Heavier spin × more power → larger energy AND slower decay → longer effect.
     _spinDyEnergy = hitPoint.dy * effectivePower;
     // Decay range: 0.95 (no spin) → 0.98 (full spin × full power) = 1–3 second duration.
     _spinDyDecay = 0.95 + hitPoint.dy.abs() * effectivePower * 0.03;
+
+    // Left/right English energy for in-travel curve (swerve).
+    _spinDxEnergy = hitPoint.dx * effectivePower;
+    _spinDxDecay = 0.94 + hitPoint.dx.abs() * effectivePower * 0.025;
+    _shootDx = hitPoint.dx; // snapshot for fixed-angle rail English
 
     stateNotifier.value = GameState.rolling;
     _prevPocketedCount = objectBalls.where((b) => !b.inPlay).length;
@@ -431,9 +413,7 @@ class PoolGame extends Forge2DGame {
   void _saveSnapshot() {
     _snapshots.add(_PoolSnapshot(
       cueBallPos: cueBall.body.position.clone(),
-      objectStates: objectBalls
-          .map((b) => _BallState(b.body.position.clone(), b.inPlay))
-          .toList(),
+      objectStates: objectBalls.map((b) => _BallState(b.body.position.clone(), b.inPlay)).toList(),
       targetIndex: _currentTargetIndex,
     ));
   }
@@ -466,6 +446,7 @@ class PoolGame extends Forge2DGame {
     _currentTargetIndex = snap.targetIndex;
     _spinApplied = false;
     _spinDyEnergy = 0.0;
+    _spinDxEnergy = 0.0;
     _ballsMoving = false; // prevent spurious _onBallsStopped after restore
     selectedPocketNotifier.value = null; // clear pocket so angle recalculates
     lastScoreNotifier.value = null;
@@ -473,8 +454,7 @@ class PoolGame extends Forge2DGame {
   }
 
   // ── Update loop ────────────────────────────────────────────────────────────
-  bool get _anyBallMoving => <BallComponent>[cueBall, ...objectBalls]
-      .any((b) => b.inPlay && b.body.linearVelocity.length2 > 0.01);
+  bool get _anyBallMoving => <BallComponent>[cueBall, ...objectBalls].any((b) => b.inPlay && b.body.linearVelocity.length2 > 0.01);
 
   /// Detects the first frame the cue ball contacts an object ball and applies
   /// the spin impulse.  Runs AFTER super.update() so Box2D has already resolved
@@ -574,6 +554,91 @@ class PoolGame extends Forge2DGame {
     );
   }
 
+  /// Side English causes the cue ball to swerve laterally during travel.
+  /// Even on a straight shot, angular velocity from side spin creates a slight
+  /// lateral drift via cloth friction (gyroscopic swerve effect).
+  void _applyContinuousEnglishSwerve() {
+    if (!_spinApplied) return; // only after object-ball contact
+    if (!cueBall.isLoaded || !cueBall.inPlay) return;
+    if (stateNotifier.value != GameState.rolling) return;
+    if (_spinDxEnergy.abs() < 0.002) return;
+
+    _spinDxEnergy *= _spinDxDecay;
+
+    // Swerve is perpendicular to the shot direction.
+    // right English (dx > 0) → curves right (+perp)
+    // left English  (dx < 0) → curves left  (-perp)
+    const kEnglishSwerve = 8.0;
+    final perp = Vector2(-_shotDir.y, _shotDir.x);
+    cueBall.body.applyForce(
+      perp * (_spinDxEnergy * kEnglishSwerve * cueBall.body.mass),
+    );
+  }
+
+  /// Applies English (side spin) effect when the cue ball bounces off a rail.
+  ///
+  /// Uses the ball's current angular velocity as the spin source (Box2D naturally
+  /// tracks and decays it via angular damping).  At the moment a rail bounce is
+  /// detected (velocity component reverses), the tangential velocity is blended
+  /// toward the spin's surface speed:
+  ///
+  /// Applies a fixed angle rotation to the cue ball's exit velocity when it
+  /// bounces off a rail, proportional to the original English setting.
+  ///
+  /// Uses the stored _shootDx (hitPoint.dx at shoot time) so the effect is
+  /// constant regardless of how much the ball's angular velocity has decayed.
+  ///
+  /// Physical sign convention (top-down, y-down screen coords):
+  ///   Vertical rail (xBounce):
+  ///     right English at right wall → checking → angle sign = −1
+  ///     right English at left  wall → running  → angle sign = +1
+  ///   Horizontal rail (yBounce):
+  ///     right English at bottom wall → running  → angle sign = +1
+  ///     right English at top    wall → checking → angle sign = −1
+  ///
+  /// kEnglishAngle: max rotation in radians at full English (dx = ±1).
+  ///   Range: 0.05–0.35 rad (≈ 3°–20°).
+  void _applyRailEnglish() {
+    if (!cueBall.isLoaded || !cueBall.inPlay) return;
+    if (stateNotifier.value != GameState.rolling) return;
+    if (_shootDx.abs() < 0.05) return;
+
+    const minSpeed = 0.5;
+    final prev = _prevCueVelocity;
+    final curr = cueBall.body.linearVelocity;
+
+    final xBounce = prev.x.abs() > minSpeed && curr.x * prev.x < 0;
+    final yBounce = prev.y.abs() > minSpeed && curr.y * prev.y < 0;
+
+    if (!xBounce && !yBounce) return;
+
+    const kEnglishAngle = 20; // radians at full English
+
+    double angleDelta = 0.0;
+
+    if (xBounce) {
+      // Right English at right wall = running (wider)  → negative rotation widens exit ✓
+      // Right English at left  wall = running (wider)  → positive rotation widens exit ✓
+      final wallSign = (prev.x > 0) ? -1.0 : 1.0;
+      angleDelta += _shootDx * wallSign * kEnglishAngle;
+    }
+    if (yBounce) {
+      // Same positive rotation gives running-english (wider) for both top and bottom rails.
+      angleDelta += _shootDx * kEnglishAngle;
+    }
+
+    if (angleDelta == 0.0) return;
+
+    // Rotate exit velocity by angleDelta (standard CCW positive, y-down coords).
+    final c = cos(angleDelta);
+    final s = sin(angleDelta);
+    final vel = curr;
+    cueBall.body.linearVelocity = Vector2(
+      vel.x * c - vel.y * s,
+      vel.x * s + vel.y * c,
+    );
+  }
+
   @override
   void update(double dt) {
     // Snapshot state BEFORE physics step (used for CCD and pre-collision spin scaling).
@@ -588,6 +653,8 @@ class PoolGame extends Forge2DGame {
     super.update(dt);
     _applySpinAtContact();
     _applyContinuousFollowDraw();
+    _applyContinuousEnglishSwerve();
+    _applyRailEnglish();
     _checkPocketCollisions();
 
     final moving = _anyBallMoving;
@@ -662,10 +729,7 @@ class PoolGame extends Forge2DGame {
       }
 
       stateNotifier.value = GameState.scored;
-      final next = nextTarget ??
-          (objectBalls.where((b) => b.inPlay).toList()
-                ..sort((a, b) => a.number.compareTo(b.number)))
-              .firstOrNull;
+      final next = nextTarget ?? (objectBalls.where((b) => b.inPlay).toList()..sort((a, b) => a.number.compareTo(b.number))).firstOrNull;
       if (next != null) {
         final eval = ShotEvaluator.evaluate(
           cueBallPos: cueBall.body.position,

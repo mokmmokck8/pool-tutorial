@@ -22,8 +22,8 @@ class BallComponent extends BodyComponent {
   }) : startPosition = position.clone();
 
   // ── Tunable physics constants ─────────────────────────────────────────────
-  /// Felt rolling resistance.  ↑ = ball stops sooner.  Range: 1.5–3.0
-  static const double kLinearDamping  = 2.0;
+  /// Felt rolling resistance.  ↑ = ball stops sooner.  Range: 0.8–2.5
+  static const double kLinearDamping  = 1.2;
   /// Spin decay rate.  ↓ = spin persists longer (better English/rail effect).  Range: 0.8–2.5
   static const double kAngularDamping = 1.4;
   /// Ball-to-ball elasticity.  ↑ = more energy kept on collision.  Range: 0.85–0.97
