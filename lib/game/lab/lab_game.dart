@@ -36,7 +36,7 @@ class LabGame extends Forge2DGame {
 
   /// 碰前旋轉對母球施加的額外摩擦力（N / spin unit）。
   /// 增大 → 上旋加速 / 下旋減速效果更明顯；減小 → 效果更微弱。
-  static const double kPreSpinForce = 18.0;
+  static const double kPreSpinForce = 40.0;
 
   // ── 碰後旋轉效果 ──────────────────────────────────────────────────────────
   /// 碰後旋轉力持續的最長時間（秒，對應 spin = ±1 時）。
@@ -45,7 +45,7 @@ class LabGame extends Forge2DGame {
 
   /// 碰後旋轉對母球施加的力大小（N）。
   /// 增大 → 上旋追球 / 下旋煞車效果更強。
-  static const double kSpinForce = 80.0;
+  static const double kSpinForce = 120.0;
 
   // ── 跟進（Follow）效果 ────────────────────────────────────────────────────
   /// 力道超過此閾值時，母球不再跟進（純定桿）。
@@ -64,6 +64,11 @@ class LabGame extends Forge2DGame {
   /// 母球碰到目標球時，旋轉量減少的比例（0 = 不衰減，1 = 完全消失）。
   /// 增大 → 碰球後旋轉效果更快消失。
   static const double kBallSpinDecay = 0.20;
+
+  /// 碰球後從旋轉時間預算中扣除的固定值（秒）。
+  /// 建立死區：微量上下旋在碰球後等效於定桿（stun）。
+  /// 增大 → 需要更強的旋轉才能在碰球後繼續發揮效果。
+  static const double kBallSpinCollisionDeduction = 0.08;
 
   // ── 碰庫動能損耗 ──────────────────────────────────────────────────────────
   /// 母球每次碰庫後速度保留的比例（1.0 = 完全彈性，無損耗）。
@@ -385,7 +390,8 @@ class LabGame extends Forge2DGame {
       // Duration also scales with power: at low power the ball is slow, so
       // spin-to-roll transition completes faster → shorter effect.
       if (_preCollisionSpin.abs() > 0.01) {
-        _spinRemaining = _preCollisionSpin.abs() * kSpinMaxDuration * _lastPower;
+        _spinRemaining = (_preCollisionSpin.abs() * kSpinMaxDuration * _lastPower - kBallSpinCollisionDeduction)
+            .clamp(0.0, double.infinity);
       }
     }
 
@@ -545,11 +551,11 @@ class LabGame extends Forge2DGame {
       _preCollisionSpin = (_preCollisionSpin + step).clamp(-1.0, 0.0);
     }
 
-    // Apply friction force proportional to remaining spin
+    // Apply friction force proportional to remaining spin and shot power
     final vel = cueBall.body.linearVelocity;
     if (vel.length < 0.01) return;
     final forceDir = _preCollisionSpin < 0 ? -(vel.normalized()) : vel.normalized();
-    cueBall.body.applyForce(forceDir * (_preCollisionSpin.abs() * kPreSpinForce));
+    cueBall.body.applyForce(forceDir * (_preCollisionSpin.abs() * kPreSpinForce * _lastPower * _lastPower));
   }
 
   // ── Post-collision spin force ─────────────────────────────────────────────
@@ -572,9 +578,9 @@ class LabGame extends Forge2DGame {
 
     final totalDuration = _preCollisionSpin.abs() * kSpinMaxDuration;
     // Linear fade: full force at start, zero at end
-    final fade = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
-    final spinDir = _lastSpin > 0 ? _shotDir : -_shotDir;
-    final forceMag = _preCollisionSpin.abs() * kSpinForce * fade;
+    final fade      = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
+    final spinDir   = _lastSpin > 0 ? _shotDir : -_shotDir;
+    final forceMag  = _preCollisionSpin.abs() * kSpinForce * fade * _lastPower * _lastPower;
 
     cueBall.body.applyForce(spinDir * forceMag);
     _spinRemaining = (_spinRemaining - dt).clamp(0.0, double.infinity);
