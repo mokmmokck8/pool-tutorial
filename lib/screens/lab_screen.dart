@@ -390,7 +390,15 @@ class _LabScreenState extends State<LabScreen>
 
           // Hit point selector (2D spin)
           Column(mainAxisSize: MainAxisSize.min, children: [
-            _label('HIT POINT'),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              _label('HIT POINT'),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => setState(() => _hitPoint = Offset.zero),
+                child: Icon(Icons.my_location_rounded,
+                    size: 11, color: Colors.black38),
+              ),
+            ]),
             const SizedBox(height: 6),
             HitPointSelector(
               value: _hitPoint,

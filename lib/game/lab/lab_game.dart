@@ -21,7 +21,8 @@ class LabGame extends Forge2DGame {
   // ── 出桿力道 ───────────────────────────────────────────────────────────────
   /// 母球每次擊打的最大衝力（N·s）。
   /// 增大 → 球速更快；減小 → 球速更慢。
-  static const double kMaxForce = 80.0;
+  /// 校準依據：9呎桌，常規擊球 10–18 km/h，power≈0.5 時初速約 35 units/s
+  static const double kMaxForce = 40.0;
 
   // ── 循跡取樣 ────────────────────1──────────────────────────────────────────
   /// 母球軌跡相鄰取樣點的最小距離（物理單位）。
@@ -32,25 +33,26 @@ class LabGame extends Forge2DGame {
   /// 旋轉衰減基礎速率（spin units / 秒，力道 = 1 時的值）。
   ///   decayRate = kPreSpinDecayRate / (power² + 0.1)
   /// 增大 → 低力道時旋轉消失更快（球更早進入自然滾動）。
-  static const double kPreSpinDecayRate = 0.2;
+  static const double kPreSpinDecayRate = 0.08;
 
   /// 碰前旋轉對母球施加的額外摩擦力（N / spin unit）。
   /// 增大 → 上旋加速 / 下旋減速效果更明顯；減小 → 效果更微弱。
-  static const double kPreSpinForce = 40.0;
+  static const double kPreSpinForce = 20.0;
 
   // ── 碰後旋轉效果 ──────────────────────────────────────────────────────────
   /// 碰後旋轉力持續的最長時間（秒，對應 spin = ±1 時）。
   /// 增大 → 上旋 / 下旋延伸效果持續更久。
-  static const double kSpinMaxDuration = 0.5;
+  static const double kSpinMaxDuration = 0.8;
 
   /// 碰後旋轉對母球施加的力大小（N）。
   /// 增大 → 上旋追球 / 下旋煞車效果更強。
-  static const double kSpinForce = 120.0;
+  static const double kSpinForce = 55.0;
 
   // ── 跟進（Follow）效果 ────────────────────────────────────────────────────
   /// 力道超過此閾值時，母球不再跟進（純定桿）。
-  /// 減小 → 更難觸發跟進；增大 → 高力道也有跟進效果。
-  static const double kFollowThreshold = 1.5;
+  /// 設為 1.0 使得滿力中桿時 followFraction = 0，即真正的定桿（stun shot）。
+  /// 旋轉產生的跟進由 kSpinForce 在碰後另行施力處理。
+  static const double kFollowThreshold = 1.0;
 
   /// 跟進效果最大前進速度比例（0 = 完全不跟進，1 = 全速跟進）。
   /// 增大 → 跟進路徑更長；減小 → 跟進路徑更短。
@@ -68,7 +70,7 @@ class LabGame extends Forge2DGame {
   /// 碰球後從旋轉時間預算中扣除的固定值（秒）。
   /// 建立死區：微量上下旋在碰球後等效於定桿（stun）。
   /// 增大 → 需要更強的旋轉才能在碰球後繼續發揮效果。
-  static const double kBallSpinCollisionDeduction = 0.08;
+  static const double kBallSpinCollisionDeduction = 0.03;
 
   // ── 碰庫動能損耗 ──────────────────────────────────────────────────────────
   /// 母球每次碰庫後速度保留的比例（1.0 = 完全彈性，無損耗）。
@@ -580,7 +582,9 @@ class LabGame extends Forge2DGame {
     // Linear fade: full force at start, zero at end
     final fade      = totalDuration > 0 ? (_spinRemaining / totalDuration).clamp(0.0, 1.0) : 0.0;
     final spinDir   = _lastSpin > 0 ? _shotDir : -_shotDir;
-    final forceMag  = _preCollisionSpin.abs() * kSpinForce * fade * _lastPower * _lastPower;
+    // Linear power scaling: power² would penalise medium shots by 4× vs full power.
+    // Linear gives a 2× ratio, keeping draw/follow usable across all power levels.
+    final forceMag  = _preCollisionSpin.abs() * kSpinForce * fade * _lastPower;
 
     cueBall.body.applyForce(spinDir * forceMag);
     _spinRemaining = (_spinRemaining - dt).clamp(0.0, double.infinity);

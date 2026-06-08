@@ -19,6 +19,7 @@ class HitPointSelector extends StatelessWidget {
     return GestureDetector(
       onPanUpdate: (details) => _handleDrag(details.localPosition),
       onTapDown: (details) => _handleDrag(details.localPosition),
+      onDoubleTap: () => onChanged(Offset.zero),
       child: SizedBox(
         width: _size,
         height: _size,
