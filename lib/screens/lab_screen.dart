@@ -17,7 +17,7 @@ class _LabScreenState extends State<LabScreen>
   double _power     = 0.5;
   Offset _hitPoint  = Offset.zero; // x = side spin, y = top/bottom spin (−1..1)
   double _cutAngle  = 0;
-  double _distance        = 6.0;
+  double _distance        = 4.0;
   double _cushionSoftness = 0.3;
   bool   _drawerOpen = false;
 
@@ -28,9 +28,9 @@ class _LabScreenState extends State<LabScreen>
 
   static const List<double> _angles = [0, 15, 20, 30, 45];
   static const List<({double dist, String label})> _distances = [
-    (dist: 3.0, label: 'NEAR'),
-    (dist: 6.0, label: 'MID'),
-    (dist: 9.0, label: 'FAR'),
+    (dist: 2.0, label: 'NEAR'),
+    (dist: 4.0, label: 'MID'),
+    (dist: 6.0, label: 'FAR'),
   ];
 
   @override
