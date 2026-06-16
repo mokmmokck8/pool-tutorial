@@ -162,17 +162,14 @@ class LabGame extends Forge2DGame {
     final angle = _autoAimAngle;
     _shotDir = Vector2(cos(angle), sin(angle));
 
-    // Initialise simulation spin/shot state
-    _sim.firstCollisionDone = false;
-    _sim.spinRemaining      = 0.0;
-    _sim.preCollisionSpin   = spin.clamp(-1.0, 1.0);
-    _sim.lastSpin           = spin.clamp(-1.0, 1.0);
-    _sim.currentSideSpin    = sideSpin.clamp(-1.0, 1.0);
-    _sim.shotDir            = _shotDir.clone();
-    _sim.lastPower          = power;
-
-    // Set cue ball initial velocity (impulse = Δv for unit mass)
-    _sim.balls[0].vel = _shotDir * (power * power * LabSimulation.kMaxForce);
+    // Initialise the cue ball: velocity from power, plus top/back and side spin.
+    // Follow / draw / stun then emerge from the slip→roll cloth physics.
+    _sim.fire(
+      power: power,
+      spin: spin,
+      sideSpin: sideSpin,
+      dir: _shotDir,
+    );
 
     stateNotifier.value = LabState.rolling;
   }
